@@ -1,0 +1,18 @@
+# Files
+*.pyc
+*.bak
+
+# Folders
+_build
+__pycache__
+*.egg-info
+
+# Hidden
+.*
+!.gitignore
+!.travis.yml
+!.gitlab-ci.yml
+
+# Notebooks (for now...)
+notebooks
+

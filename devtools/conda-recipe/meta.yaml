@@ -1,0 +1,47 @@
+{% set version = "0.0.1" %}
+
+package:
+  name: jobsubmitter
+  version: {{ version }}
+
+source:
+  path: ../../
+
+build:
+  script: python setup.py install
+  number: 0
+
+requirements:
+  build:
+    # Basic python
+    - python
+  run:
+    # Basic python
+    - python
+    - pyyaml
+    - requests
+    - retrying
+    - paramiko
+    # Scientific python
+    - numpy
+    - scipy
+    - pandas
+    - sqlalchemy
+    # IPython
+    - ipython
+    - pygments
+
+test:
+  requires:
+    - pytest
+    - pytest-runner
+    - pytest-cov
+    - pypy
+    - flake8
+  imports:
+    - jobsubmitter
+
+about:
+  home: http://pmklab.github.io/jobsubmitter
+  license: MIT
+  summary: Helpful bioinformatics scripts.
