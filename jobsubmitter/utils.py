@@ -1,4 +1,3 @@
-import re
 
 
 def iterate_parameters(_params=None, **parameter_grid):

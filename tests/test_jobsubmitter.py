@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 def _parse_connection_string(connection_string):
     _db_info = kmtools.db_tools.parse_connection_string(connection_string)
-    return _db_info['db_type'], _db_info['host_ip']
+    return _db_info['db_type'], _db_info['db_url']
 
 
 def _test_ssh_connection(connection_string):
@@ -61,7 +61,8 @@ def get_system_commands(script_filename):
 def test_1(connection_string, concurrent_job_limit):
     """Test on tasks that finish successfully."""
     job_name = 'test_1'
-    system_commands = get_system_commands('_test_1.py')
+    system_commands = get_system_commands(
+        op.join(op.dirname(__file__), 'scripts', '_test_1.py'))
     # tempdir = tempfile.TemporaryDirectory(dir=op.expanduser('~/tmp'))
     # lrp = tempdir.name
     lrp = tempfile.mkdtemp(dir=op.expanduser('~/tmp'))
@@ -92,7 +93,8 @@ def test_1(connection_string, concurrent_job_limit):
 def test_2(connection_string, concurrent_job_limit):
     """Test on tasks that finish in a crash."""
     job_name = 'test_2'
-    system_commands = get_system_commands('_test_2.py')
+    system_commands = get_system_commands(
+        op.join(op.dirname(__file__), 'scripts', '_test_2.py'))
     # tempdir = tempfile.TemporaryDirectory(dir=op.expanduser('~/tmp'))
     # lrp = tempdir.name
     lrp = tempfile.mkdtemp(dir=op.expanduser('~/tmp'))
@@ -136,7 +138,7 @@ class TestJobStatus:
         shutil.rmtree(cls.log_dir)
 
     def test_job_status(self):
-        js = kmtools.cluster_tools.JobSubmitter(
+        js = jobsubmitter.JobSubmitter(
             self.job_name,
             self.connection_string,
             self.log_base_dir,
