@@ -34,10 +34,9 @@ with js.connect():
     print(js.get_num_running_jobs())
 
 # Read job results
-results = js.job_status([0, "echo 'hello world'"]
+results = js.job_status()
 print(Counter(results['status']))
 ```
-
 
 
 ## Contributing
