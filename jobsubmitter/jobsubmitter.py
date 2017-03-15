@@ -18,6 +18,7 @@ import contextlib
 import pandas as pd
 from kmtools.db_tools import parse_connection_string
 
+logging.getLogger("paramiko").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
@@ -99,6 +100,9 @@ class JobSubmitter:
         self.log_path = log_path
 
         self.ssh = None
+
+        #
+        self.job_ids = []
 
         # Default arguments
         self.concurrent_job_limit = concurrent_job_limit
@@ -211,6 +215,7 @@ qsub -S {qsub_shell} -N {job_name} -M {email} -m {email_opts} -o /dev/null -e /d
             stdout, stderr = self._exec_system_command(system_command)
             time.sleep(0.05)
             results.append((stdout, stderr, ))
+            self.job_ids.append(job_id)
         return results
 
     def get_num_running_jobs(self):
@@ -259,11 +264,32 @@ qsub -S {qsub_shell} -N {job_name} -M {email} -m {email_opts} -o /dev/null -e /d
 
     # === Job status ===
 
-    def job_status(self, iterable):
+    def job_status(self, iterable=None):
+        """Return a :class:`pandas.DataFrame` with the status and results of each submitted job.
+
+        Parameters
+        ----------
+        iterable :
+            An iterable of ``(job_id, system_command)`` tuples.
+            ``system_command`` can be None, in which case the ``system_command`` column
+            of the returned DataFrame will be empty.
+        """
+        if iterable is None:
+            iterable = self.job_ids[:]
         results_all = []
-        for job_id, system_command in iterable:
-            results = {'job_id': job_id, 'status': None, '~system_command': system_command}
+        for job_id in iterable:
+            system_command = None
+            if not isinstance(job_id, (int, str)):
+                if len(job_id) == 1:
+                    job_id = job_id[0]
+                elif len(job_id) == 2:
+                    job_id, system_command = job_id
+                else:
+                    raise Exception
+            results = {'job_id': job_id, 'status': None, 'system_command': system_command}
             results_all.append(results)
+            # Refresh NFS
+            os.listdir(self.log_path)
             #
             stdout_file = op.join(self.log_path, '{}.out'.format(job_id))
             stderr_file = op.join(self.log_path, '{}.err'.format(job_id))
