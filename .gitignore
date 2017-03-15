@@ -16,3 +16,6 @@ __pycache__
 # Notebooks (for now...)
 notebooks
 
+# Build
+build
+dist
