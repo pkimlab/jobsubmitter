@@ -8,7 +8,7 @@ source:
   path: ../../
 
 build:
-  script: python setup.py install
+  script: $PYTHON setup.py install --single-version-externally-managed --record=record.txt
   number: 0
 
 requirements:
@@ -42,6 +42,6 @@ test:
     - jobsubmitter
 
 about:
-  home: http://pmklab.github.io/jobsubmitter
+  home: http://kimlab.gitlab.io/jobsubmitter
   license: MIT
   summary: Helpful bioinformatics scripts.
