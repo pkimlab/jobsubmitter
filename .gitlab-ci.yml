@@ -58,7 +58,7 @@ build-py36:
     - cp -r $CI_PROJECT_DIR/conda-bld/* /opt/conda/conda-bld/
     - conda index /opt/conda/conda-bld/
     - conda install -yq 'requests<2.12'
-    - conda install -yq --use-local $CI_PROJECT_NAME]
+    - conda install -yq --use-local $CI_PROJECT_NAME
 
 test-docs:
   stage: test
