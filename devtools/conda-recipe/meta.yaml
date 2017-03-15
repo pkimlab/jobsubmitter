@@ -30,6 +30,8 @@ requirements:
     # IPython
     - ipython
     - pygments
+    # kimlab
+    - kmtools
 
 test:
   requires:

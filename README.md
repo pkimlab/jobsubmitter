@@ -1,6 +1,6 @@
 # jobsubmitter
 
-[![anaconda](https://anaconda.org/kimlab/jobsubmitter/badges/version.svg?style=flat-square)](https://anaconda.org/kimlab/jobsubmitter)
+[![anaconda](https://anaconda.org/kimlab/jobsubmitter/badges/version.svg?style=flat-square)](https://anaconda.org/ostrokach/jobsubmitter)
 [![docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square&?version=latest)](http://kimlaborg.github.io/jobsubmitter)
 [![travis](https://img.shields.io/travis/kimlaborg/jobsubmitter.svg?style=flat-square)](https://travis-ci.org/kimlaborg/jobsubmitter)
 [![codecov](https://img.shields.io/codecov/c/github/kimlaborg/jobsubmitter.svg?style=flat-square)](https://codecov.io/gh/kimlaborg/jobsubmitter)
