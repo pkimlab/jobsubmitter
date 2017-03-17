@@ -57,8 +57,8 @@ build-py36:
     # Conda install
     - cp -r $CI_PROJECT_DIR/conda-bld/* /opt/conda/conda-bld/
     - conda index /opt/conda/conda-bld/
-    - conda install -y -q 'requests<2.12'
-    - conda install -y -q --use-local "python=$PYTHON_VERSION" $CI_PROJECT_NAME
+    - conda install -y -q 'requests<2.12' >/dev/null
+    - conda install -y -q --use-local "python=$PYTHON_VERSION" $CI_PROJECT_NAME >/dev/null
 
 .test: &test
   stage: test
