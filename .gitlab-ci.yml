@@ -84,22 +84,6 @@ test-py36:
   variables:
     <<: [*py36]
 
-test-docs:
-  stage: test
-  <<: *conda_install
-  dependencies:
-    - build-py36
-  variables:
-    <<: [*py36]
-  script:
-    - pip install -q sphinx sphinx_rtd_theme recommonmark
-    - sphinx-build docs public
-  variables:
-    <<: [*py36]
-  artifacts:
-    paths:
-    - public
-
 # === Deploy ===
 
 .deploy: &deploy
@@ -116,3 +100,19 @@ deploy-py36:
   <<: *deploy
   dependencies:
     - build-py36
+
+deploy-docs:
+  stage: deploy
+  <<: *conda_install
+  dependencies:
+    - build-py36
+  variables:
+    <<: [*py36]
+  script:
+    - pip install -q sphinx sphinx_rtd_theme recommonmark
+    - sphinx-build docs public
+  variables:
+    <<: [*py36]
+  artifacts:
+    paths:
+    - public
