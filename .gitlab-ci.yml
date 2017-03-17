@@ -46,9 +46,9 @@ build-py36:
   variables:
     <<: [*py36]
 
-# === Test ===
+# === Install ===
 
-.conda_install: &conda_install
+.conda-install: &conda-install
   before_script:
     # Conda configure
     - conda config --append channels bioconda
@@ -60,9 +60,24 @@ build-py36:
     - conda install -y -q 'requests<2.12' >/dev/null
     - conda install -y -q --use-local "python=$PYTHON_VERSION" $CI_PROJECT_NAME >/dev/null
 
+.conda-install-py35: &conda-install-py35
+  <<: *conda-install
+  dependencies:
+    - build-py35
+  variables:
+    <<: [*py35]
+
+.conda-install-py35: &conda-install-py36
+  <<: *conda-install
+  dependencies:
+    - build-py36
+  variables:
+    <<: [*py35]
+
+# === Test ===
+
 .test: &test
   stage: test
-  <<: *conda_install
   script:
     - pip install -q flake8 pytest pytest-cov
     - flake8
@@ -71,25 +86,29 @@ build-py36:
     - local  # need to test using a local cluster
 
 test-py35:
-  <<: *test
-  dependencies:
-    - build-py35
-  variables:
-    <<: [*py35]
+  <<: [*conda-install-py35, *test]
 
 test-py36:
-  <<: *test
-  dependencies:
-    - build-py36
-  variables:
-    <<: [*py36]
+  <<: [*conda-install-py36, *test]
+
+# === Pages ===
+
+pages:
+  stage: deploy
+  <<: *conda-install-py36
+  script:
+    - pip install -q sphinx sphinx_rtd_theme recommonmark
+    - sphinx-build docs public
+  artifacts:
+    paths:
+    - public
 
 # === Deploy ===
 
 .deploy: &deploy
   stage: deploy
   script:
-    - anaconda -t $ANACONDA_TOKEN upload $CI_PROJECT_DIR/conda-bld/linux-64/*.tar.bz2 -u $CI_PROJECT_NAMESPACE --force
+    - anaconda -t $ANACONDA_TOKEN upload $CI_PROJECT_DIR/conda-bld/linux-64/*.tar.bz2 -u ${CI_PROJECT_NAMESPACE%-forge} --force
 
 deploy-py35:
   <<: *deploy
@@ -100,19 +119,3 @@ deploy-py36:
   <<: *deploy
   dependencies:
     - build-py36
-
-deploy-docs:
-  stage: deploy
-  <<: *conda_install
-  dependencies:
-    - build-py36
-  variables:
-    <<: [*py36]
-  script:
-    - pip install -q sphinx sphinx_rtd_theme recommonmark
-    - sphinx-build docs public
-  variables:
-    <<: [*py36]
-  artifacts:
-    paths:
-    - public
