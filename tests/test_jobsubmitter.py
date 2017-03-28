@@ -48,7 +48,7 @@ logger.info("Collected {} test inputs".format(len(test_input)))
 
 def get_system_commands(script_filename):
     return [
-        (str(job_id), '{python} "{script}" -i {job_id}'.format(
+        (str(job_id), '{python} \'{script}\' -i {job_id}'.format(
             python=sys.executable,
             script=op.join(op.abspath(op.dirname(__file__)), script_filename),
             job_id=job_id))
@@ -62,13 +62,13 @@ def test_1(connection_string, concurrent_job_limit):
     """Test on tasks that finish successfully."""
     job_name = 'test_1'
     system_commands = get_system_commands(
-        op.join(op.dirname(__file__), 'scripts', '_test_1.py'))
+        op.join(op.dirname(op.abspath(__file__)), 'scripts', '_test_1.py'))
     # tempdir = tempfile.TemporaryDirectory(dir=op.expanduser('~/tmp'))
     # lrp = tempdir.name
     lrp = tempfile.mkdtemp(dir=op.expanduser('~/tmp'))
     # Submit jobs
     js = jobsubmitter.JobSubmitter(
-        job_name, connection_string, lrp,
+        connection_string, lrp, lrp, job_name,
         walltime='01:00:00',
         concurrent_job_limit=concurrent_job_limit,
         queue='short')
@@ -100,7 +100,7 @@ def test_2(connection_string, concurrent_job_limit):
     lrp = tempfile.mkdtemp(dir=op.expanduser('~/tmp'))
     # Submit jobs
     js = jobsubmitter.JobSubmitter(
-        job_name, connection_string, lrp,
+        connection_string, lrp, lrp, job_name,
         walltime='01:00:00',
         concurrent_job_limit=concurrent_job_limit,
         queue='short')
@@ -139,9 +139,10 @@ class TestJobStatus:
 
     def test_job_status(self):
         js = jobsubmitter.JobSubmitter(
-            self.job_name,
             self.connection_string,
             self.log_base_dir,
+            self.log_base_dir,
+            self.job_name,
             force_new_folder=False)
         results_df = js.job_status([(i, i) for i in range(3360)])
         assert (Counter(results_df['status']) ==

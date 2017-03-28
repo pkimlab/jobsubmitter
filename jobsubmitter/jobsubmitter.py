@@ -1,25 +1,31 @@
-""".
-
-.. todo::
-
-    Use a MySQL database if you ever want to run on SciNet.
-
-    ``SELECT ... WHERE idx = xxx FOR UPDATE;``
-
-"""
+import atexit
+import concurrent.futures
+import contextlib
+import json
+import logging
 import os
 import os.path as op
+import shlex
+import subprocess
 import time
-import json
-import atexit
-import logging
-import paramiko
-import contextlib
+
 import pandas as pd
+import paramiko
+
 from kmtools.db_tools import parse_connection_string
 
 logging.getLogger("paramiko").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
+
+
+KNOWN_HOSTS = {
+    'beagle': 'sge://:@192.168.6.201',
+    'banting': 'pbs://:@192.168.233.150',
+    'scinet-gpc': 'pbs://:@login.scinet.utoronto.ca-gpc02',
+    'cq-ms2': 'pbs://:@pmkim-ms.ccs.usherbrooke.ca',
+    'cq-mp2': 'pbs://:@pmkim-mp.ccs.usherbrooke.ca',
+    'cq-guillimin': 'pbs://:@guillimin.hpc.mcgill.ca',
+}
 
 
 class JobSubmitter:
@@ -33,11 +39,12 @@ class JobSubmitter:
 
     def __init__(
         self,
-        job_name,
         connection_string,
-        log_root_path=None,
-        force_new_folder=True,
+        local_path,
+        remote_path,
+        job_name,
         *,
+        force_new_folder=True,
         concurrent_job_limit=None,
         queue='medium',
         nproc=1,
@@ -47,7 +54,7 @@ class JobSubmitter:
         email='noname@example.com',
         email_opts='a',
         qsub_shell='/bin/bash',  # Python does not work on Banting
-        qsub_script=op.abspath(op.join(op.dirname(__file__), 'scripts', 'qsub.sh')),
+        qsub_script=None,
         qsub_script_args={},
         env=None
     ):
@@ -55,25 +62,28 @@ class JobSubmitter:
 
         Parameters
         ----------
+        connection_string : str
+            Connection string for the batch job server (e.g. 'pbs://:@192.168.0.1')
+        local_path: str
+            Full path to the local working directory.
+        remote_path : str
+            Full path to the remove working directory.
         job_name : str
             Name of the job.
-        head_node_ip : str
-            IP address of the head node.
-        head_node_type : str
-            Job manager type ['sge', 'pbs', ...]
-        log_root_path : str, default None
-            Location where the log files should be saved.
-            A new folder will be created here for each job.
-            TODO: Allow this to be a database.
-        force_new_job : bool
-            A.
+
+        To do
+        -----
+        - Add more options to the connecton string (username / pass)
         """
-        # TODO: Add more options to the connecton string (username / pass)
+        if connection_string in KNOWN_HOSTS:
+            connection_string = KNOWN_HOSTS[connection_string]
         _db_info = parse_connection_string(connection_string)
         head_node_type = _db_info['db_type']
         head_node_ip = _db_info['db_url']
 
         # Required arguments
+        self.local_path = local_path
+        self.remote_path = remote_path
         self.job_name = job_name
         self.head_node_ip = head_node_ip
 
@@ -81,13 +91,7 @@ class JobSubmitter:
             raise ValueError("Wrong 'head_node_type': '{}'".format(head_node_type))
         self.head_node_type = head_node_type
 
-        if log_root_path is None:
-            log_root_path = op.join(op.expanduser('~'), 'pbs-output')
-        else:
-            log_root_path = op.abspath(log_root_path)
-        os.makedirs(log_root_path, exist_ok=True)
-
-        log_path = op.join(log_root_path, job_name)
+        log_path = op.join(local_path, job_name)
         try:
             os.mkdir(log_path)
         except FileExistsError:
@@ -96,7 +100,7 @@ class JobSubmitter:
                 raise
             else:
                 logger.warning("Using an existing folder for log output. This is dangerous!!!")
-        time.sleep(1)
+        time.sleep(1)  # give some time to sync NFS
         self.log_path = log_path
 
         self.ssh = None
@@ -155,9 +159,8 @@ class JobSubmitter:
     @property
     def qsub_system_command_template(self):
         """Template of the system command which will submit the given job on the head node."""
-        # Global options are inside one set of curly braces,
-        # local options are inside two sets of curly braces.
-        #
+        # Global options are inside one set of curly braces
+        # Local options are inside two sets of curly braces
         return """\
 qsub -S {qsub_shell} -N {job_name} -M {email} -m {email_opts} -o /dev/null -e /dev/null \
 {{nproc}}{{walltime}}{{mem}}{{vmem}} {{env_string}} \
@@ -183,8 +186,12 @@ qsub -S {qsub_shell} -N {job_name} -M {email} -m {email_opts} -o /dev/null -e /d
             cluster_opts = dict(
                 nproc='-l nodes=1:ppn={}'.format(self.nproc),
                 walltime=',walltime={}'.format(self.walltime),
-                mem=',mem={}'.format(self.mem) if self.mem else '',
-                vmem=',vmem={}'.format(self.vmem) if self.vmem else '',
+                # mem: Maximum amount of physical memory used by the job.
+                # pmem: Maximum amount of physical memory used by any single process of the job.
+                mem=',pmem={}'.format(self.mem) if self.mem else '',
+                # vmem: Maximum amount of virtual memory used by all (conc) processes in the job.
+                # pvmem: Maximum amount of virtual memory used by any single process in the job.
+                vmem=',pvmem={}'.format(self.vmem) if self.vmem else '',
                 env_string='-v ' + ','.join('{}="{}"'.format(*x) for x in self.env.items()),
                 qsub_script_args_string='-F "{}"'.format(' '.join(
                     '--{} {}'.format(key, value) for key, value in self.qsub_script_args.items()
@@ -194,9 +201,21 @@ qsub -S {qsub_shell} -N {job_name} -M {email} -m {email_opts} -o /dev/null -e /d
             raise Exception
         return template.format(**cluster_opts)
 
-    # === Submit job ===
+    # === Submit job (requires connection with server) ===
 
     def submit(self, iterable):
+        """Sumit jobs to the cluster.
+
+        You have to establish a connection first (explicit is better than implicit)::
+
+            with js.connect():
+                js.submit([(0, 'echo "Hello world!"), (1, 'echo "Goodbye world!"')]
+        """
+        if self.qsub_script is None:
+            system_command = 'export PATH="$HOME/anaconda/bin:$PATH"; which qsub.sh'
+            logger.debug(system_command)
+            self.qsub_script, _ = self._exec_system_command(system_command)
+            logger.debug(self.qsub_script)
         results = []
         _system_command_template = (
             self._format_local(self._format_global(self.qsub_system_command_template))
@@ -218,13 +237,26 @@ qsub -S {qsub_shell} -N {job_name} -M {email} -m {email_opts} -o /dev/null -e /d
             self.job_ids.append(job_id)
         return results
 
-    def get_num_running_jobs(self):
+    def submit_local(self, iterable):
+        def worker(idx_system_command):
+            idx, system_command = idx_system_command
+            cp = subprocess.run(system_command, shell=True)
+            return cp
+
+        with concurrent.futures.ThreadPoolExecutor() as p:
+            results = p.map(worker, iterable)
+
+        return results
+
+    @property
+    def num_running_jobs(self):
         system_command = 'qstat -u "$USER" | grep "$USER" | grep -i " r  " | wc -l'
         stdout, stderr = self._exec_system_command(system_command)
         num_running_jobs = int(stdout)
         return num_running_jobs
 
-    def get_num_submitted_jobs(self):
+    @property
+    def num_submitted_jobs(self):
         system_command = 'qstat -u "$USER" | grep "$USER" | wc -l'
         stdout, stderr = self._exec_system_command(system_command)
         num_submitted_jobs = int(stdout)
@@ -254,13 +286,42 @@ qsub -S {qsub_shell} -N {job_name} -M {email} -m {email_opts} -o /dev/null -e /d
             STEP_SIZE = 50
             DELAY = 120
             if self.concurrent_job_limit is not None and ((i + 1) % STEP_SIZE) == 0:
-                num_submitted_jobs = self.get_num_submitted_jobs()
-                while (num_submitted_jobs + STEP_SIZE) > self.concurrent_job_limit:
+                while (self.num_submitted_jobs + STEP_SIZE) > self.concurrent_job_limit:
                     logger.info(
                         "'concurrent_job_limit' reached! Sleeping for {:.0f} minutes..."
                         .format(DELAY / 60))
                     time.sleep(DELAY)
-                    num_submitted_jobs = self.get_num_submitted_jobs()
+
+    def sync_remote(self):
+        """Move data from local working directory to remote working directory."""
+        system_command = 'ssh {head_node_ip} "mkdir -p {remote_path}"'.format(
+            head_node_ip=self.head_node_ip,
+            remote_path=self.remote_path
+        )
+        logger.debug(system_command)
+        cp = subprocess.run(shlex.split(system_command))
+        cp.check_returncode()
+
+        system_command = "rsync -a {local_path}/ {head_node_ip}:{remote_path}/".format(
+            local_path=self.local_path,
+            head_node_ip=self.head_node_ip,
+            remote_path=self.remote_path,
+        )
+        logger.debug(system_command)
+        cp = subprocess.run(shlex.split(system_command))
+        cp.check_returncode()
+
+    def sync_local(self):
+        """Move data from remote working directory to local working directory."""
+        # system_command = "rsync {}"
+        system_command = "rsync -a {head_node_ip}:{remote_path}/ {local_path}/".format(
+            local_path=self.local_path,
+            head_node_ip=self.head_node_ip,
+            remote_path=self.remote_path,
+        )
+        logger.debug(system_command)
+        cp = subprocess.run(shlex.split(system_command))
+        cp.check_returncode()
 
     # === Job status ===
 
