@@ -38,5 +38,8 @@ setup(
     ],
     license='MIT',
     packages=find_packages(),
-    package_data={},
+    package_data={
+        'jobsubmitter': 'scripts/*.sh',
+    },
+    scripts=['jobsubmitter/scripts/qsub.sh'],
 )
