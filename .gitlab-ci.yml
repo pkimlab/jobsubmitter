@@ -102,10 +102,6 @@ test-py36:
     - conda install -yq nbconvert ipython ipykernel pandoc
     - pip install -q sphinx sphinx_rtd_theme recommonmark nbsphinx
     - sphinx-build docs public
-  only:
-    - master
-  except:
-    - triggers
 
 pages:
   <<: [*conda_configure, *docs]
@@ -113,6 +109,19 @@ pages:
     - build-py36
   variables:
     <<: [*py36]
+  except:
+    - master
+
+pages:
+  <<: [*conda_configure, *docs]
+  dependencies:
+    - build-py36
+  variables:
+    <<: [*py36]
+  only:
+    - master
+  except:
+    - triggers
   artifacts:
     paths:
     - public
