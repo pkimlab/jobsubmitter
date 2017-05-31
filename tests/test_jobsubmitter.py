@@ -37,44 +37,37 @@ def _test_ssh_connection(connection_string):
         return False
 
 
-test_input = [
-    (connection_string, concurrent_job_limit)
-    for connection_string in [('sge://:@192.168.6.201'), ('pbs://:@192.168.233.150')]
-    for concurrent_job_limit in [None, 50]
-    if _test_ssh_connection(connection_string)
-]
+test_input = [(connection_string, concurrent_job_limit)
+              for connection_string in [('sge://:@192.168.6.201'), ('pbs://:@192.168.233.150')]
+              for concurrent_job_limit in [None, 50] if _test_ssh_connection(connection_string)]
 logger.info("Collected {} test inputs".format(len(test_input)))
 
 
 def get_system_commands(script_filename):
     return [
-        (str(job_id), '{python} \'{script}\' -i {job_id}'.format(
-            python=sys.executable,
-            script=op.join(op.abspath(op.dirname(__file__)), script_filename),
-            job_id=job_id))
-        for job_id in range(99)
-    ]
+        (job_id, {'system_command': '{python} \'{script}\' -i {job_id}'.format(
+            python=sys.executable, script=op.join(
+                op.abspath(op.dirname(__file__)), script_filename), job_id=job_id)})
+        for job_id in range(99)]
 
 
 @pytest.mark.skipif(pytest.config.getvalue("quick"), reason="Tests take several minutes.")
 @pytest.mark.parametrize("connection_string, concurrent_job_limit", test_input)
 def test_1(connection_string, concurrent_job_limit):
     """Test on tasks that finish successfully."""
-    job_name = 'test_1'
-    system_commands = get_system_commands(
-        op.join(op.dirname(op.abspath(__file__)), 'scripts', '_test_1.py'))
-    # tempdir = tempfile.TemporaryDirectory(dir=op.expanduser('~/tmp'))
-    # lrp = tempdir.name
-    lrp = tempfile.mkdtemp(dir=op.expanduser('~/tmp'))
+    script_filename = op.join(op.dirname(op.abspath(__file__)), 'scripts', '_test_1.py')
+    system_commands = get_system_commands(script_filename)
+    tempdir = tempfile.TemporaryDirectory(dir=op.join(op.dirname(op.abspath(__file__)), 'jobs'))
+    job_folder = tempdir.name
     # Submit jobs
     js = jobsubmitter.JobSubmitter(
-        connection_string, lrp, lrp, job_name,
-        walltime='01:00:00',
-        concurrent_job_limit=concurrent_job_limit,
-        queue='short')
+        job_folder, connection_string,
+        walltime='01:00:00', concurrent_job_limit=concurrent_job_limit, queue='short')
     logger.info('Submitting...')
     with js.connect():
-        js.submit(system_commands)
+        futures = js.submit(system_commands)
+        results = [f.result() for f in futures]
+    logger.debug("results: %s", results)
     logger.info('Finished submitting...')
     # Make sure that jobs finish successfully
     time_0 = time.time()
@@ -92,18 +85,14 @@ def test_1(connection_string, concurrent_job_limit):
 @pytest.mark.parametrize("connection_string, concurrent_job_limit", test_input)
 def test_2(connection_string, concurrent_job_limit):
     """Test on tasks that finish in a crash."""
-    job_name = 'test_2'
-    system_commands = get_system_commands(
-        op.join(op.dirname(__file__), 'scripts', '_test_2.py'))
-    # tempdir = tempfile.TemporaryDirectory(dir=op.expanduser('~/tmp'))
-    # lrp = tempdir.name
-    lrp = tempfile.mkdtemp(dir=op.expanduser('~/tmp'))
+    script_filename = op.join(op.dirname(__file__), 'scripts', '_test_2.py')
+    system_commands = get_system_commands(script_filename)
+    tempdir = tempfile.TemporaryDirectory(dir=op.join(op.dirname(op.abspath(__file__)), 'jobs'))
+    job_folder = tempdir.name
     # Submit jobs
     js = jobsubmitter.JobSubmitter(
-        connection_string, lrp, lrp, job_name,
-        walltime='01:00:00',
-        concurrent_job_limit=concurrent_job_limit,
-        queue='short')
+        job_folder, connection_string,
+        walltime='01:00:00', concurrent_job_limit=concurrent_job_limit, queue='short')
     logger.info('Submitting...')
     with js.connect():
         js.submit(system_commands)
@@ -139,11 +128,12 @@ class TestJobStatus:
 
     def test_job_status(self):
         js = jobsubmitter.JobSubmitter(
-            self.connection_string,
-            self.log_base_dir,
-            self.log_base_dir,
-            self.job_name,
+            self.connection_string, self.log_base_dir, self.log_base_dir, self.job_name,
             force_new_folder=False)
         results_df = js.job_status([(i, i) for i in range(3360)])
-        assert (Counter(results_df['status']) ==
-                Counter({'done': 2650, 'frozen': 387, 'missing': 323}))
+        assert (
+            Counter(results_df['status']) == Counter({
+                'done': 2650,
+                'frozen': 387,
+                'missing': 323
+            }))
