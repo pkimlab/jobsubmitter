@@ -1,3 +1,13 @@
+"""
+
+
+To Do
+-----
+
+- $HOME
+- $SCRATCH
+
+"""
 import atexit
 import concurrent.futures
 import contextlib
@@ -8,24 +18,186 @@ import os.path as op
 import shlex
 import subprocess
 import time
+from collections import namedtuple
 
 import pandas as pd
 import paramiko
+from retrying import retry
 
 from kmtools.db_tools import parse_connection_string
 
 logging.getLogger("paramiko").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
+#: Connection options
+#: If `remote_home` and `remote_scratch` are `None`, it implies
+#: that they are the same as $HOME on local host.
+_ConOpts = namedtuple('ConOpts', 'connection_string, remote_home, remote_scratch')
+_ConOpts.__new__.__defaults__ = (None, None, )
 
 KNOWN_HOSTS = {
-    'beagle': 'sge://:@192.168.6.201',
-    'banting': 'pbs://:@192.168.233.150',
-    'scinet-gpc': 'pbs://:@login.scinet.utoronto.ca-gpc02',
-    'cq-ms2': 'pbs://:@pmkim-ms.ccs.usherbrooke.ca',
-    'cq-mp2': 'pbs://:@pmkim-mp.ccs.usherbrooke.ca',
-    'cq-guillimin': 'pbs://:@guillimin.hpc.mcgill.ca',
+    'local': _ConOpts('local://:@127.0.0.1'),
+    'beagle': _ConOpts('sge://:@192.168.6.201'),
+    'banting': _ConOpts('pbs://:@192.168.233.150'),
+    'scinet-gpc': _ConOpts('pbs://:@login.scinet.utoronto.ca-gpc02', '$HOME', '$SCRATCH'),
+    'cq-ms2': _ConOpts('pbs://:@pmkim-ms.ccs.usherbrooke.ca', '$HOME', '$HOME'),
+    'cq-mp2': _ConOpts('pbs://:@pmkim-mp.ccs.usherbrooke.ca', '$HOME', '$HOME'),
+    'cq-guillimin': _ConOpts('pbs://:@guillimin.hpc.mcgill.ca', '$HOME', '$SCRATCH'),
 }
+
+
+class QSub:
+
+    def __init__(
+        self,
+        job_type,
+        job_name,
+        qsub_script,
+        working_dir,
+        qsub_script_args=None,  # key-value dict
+        queue='medium',
+        nproc=1,  # number of processors per node
+        walltime='02:00:00',  # hh:mm:ss
+        mem=None,  # RAM per node
+        pmem=None,  # RAM per processor
+        vmem=None,  # virtual memory per node (not enforced)
+        pvmem=None,  # virtual memory per processor (not enforced)
+        email='noname@example.com',  # email of user submitting jobs
+        email_opts='a',  # email options
+        qsub_shell='/bin/bash',  # python does not work on banting :(
+        env=None,
+    ):
+        """Class for generating ``qsub`` system commands.
+
+        Parameters
+        ----------
+        job_type : {'sge', 'pbs'}
+            Specifies which type of batch system you are using.
+        job_name : str
+            Name of the job.
+        qsub_script : str
+            Location of script file to be ran by qsub.
+        working_dir : str
+            Location relative to which all system commands are performed.
+        queue : str, optional
+        nproc : int, optional
+            Number of processors per node.
+        walltime : str, optional
+            Maximum amount of time that the job is allowed to run,
+            written as `hh:mm:ss`.
+        mem : str, optional
+            Maximum amount of physical memory used by the job.
+        pmem : str, optional
+            Maximum amount of physical memory used by any single process of the job.
+        vmem : str, optional
+            Maximum amount of virtual memory used by all (conc) processes in the job.
+        pvmem : str, optional
+            Maximum amount of virtual memory used by any single process in the job.
+        email : str, optional
+            Email of user submitting jobs
+        email_opts : str, optional
+            Email options
+        qsub_shell : str, optional
+            The ``python`` shell does not work on banting :(.
+        qsub_script_args : dict, optional
+            Arguments for the ``qsub.sh`` shell script.
+        env : dict, optional
+            Environment variables.
+        """
+        self.job_type = job_type
+        self.job_name = job_name
+        self.qsub_script = qsub_script
+        self.working_dir = working_dir
+        self.queue = queue
+        self.nproc = nproc
+        self.walltime = walltime
+        self.mem = mem
+        self.pmem = pmem
+        self.vmem = vmem
+        self.pvmem = pvmem
+        self.email = email
+        self.email_opts = email_opts
+        self.qsub_shell = qsub_shell
+        self.qsub_script_args = qsub_script_args or {}
+        self.env = env or {}
+
+        self._qsub_system_command = (
+            self._format_local(self._format_global(self._qsub_system_command_template)))
+
+    @property
+    def _qsub_system_command_template(self):
+        """Template of the system command which will submit the given job on the head node.
+
+        - Global options are inside one set of curly braces.
+        - Local options are inside two sets of curly braces.
+        """
+        return """\
+PATH="{{PATH}}" qsub -S {qsub_shell} -N {job_name} -M {email} -m {email_opts} \
+-o /dev/null -e /dev/null {{working_dir}} \
+{{nproc}}{{walltime}}{{mem}}{{pmem}}{{vmem}}{{pvmem}} {{{{env_string}}}} \
+'{qsub_script}' {{qsub_script_args_string}} \
+"""
+
+    def _format_global(self, template):
+        return template.format(**self.__dict__)
+
+    def _format_local(self, template):
+        cluster_opts = dict(
+            PATH=self.env.get('PATH', '$PATH'),
+        )
+        if self.job_type == 'sge':
+            cluster_opts = dict(
+                **cluster_opts,
+                working_dir=' -wd {}'.format(self.working_dir),
+                nproc=' -pe smp {}'.format(self.nproc),
+                walltime=' -l h_rt={}'.format(self.walltime),
+                mem=' -l mem_free={}'.format(self.mem) if self.mem else '',
+                pmem='',
+                vmem=' -l h_vmem={}'.format(self.vmem) if self.vmem else '',
+                pvmem='',
+                qsub_script_args_string=' '.join(
+                    '--{} {}'.format(key, value) for key, value in self.qsub_script_args.items())
+                if self.qsub_script_args else '',
+            )
+        elif self.job_type == 'pbs':
+            cluster_opts = dict(
+                **cluster_opts,
+                working_dir=' -d {}'.format(self.working_dir),
+                nproc='-l nodes=1:ppn={}'.format(self.nproc) if self.nproc else '-l nodes=1',
+                walltime=',walltime={}'.format(self.walltime),
+                mem=',mem={}'.format(self.mem) if self.mem else '',
+                pmem=',pmem={}'.format(self.pmem) if self.pmem else '',
+                vmem=',vmem={}'.format(self.vmem) if self.vmem else '',
+                pvmem=',pvmem={}'.format(self.pvmem) if self.pvmem else '',
+                qsub_script_args_string='-F "{}"'.format(
+                    ' '.join(
+                        '--{} {}'.format(key, value)
+                        for key, value in self.qsub_script_args.items()))
+                if self.qsub_script_args else '',
+            )
+        else:
+            raise Exception
+        return template.format(**cluster_opts)
+
+    def format_env(self, env):
+        if self.job_type == 'sge':
+            env_string = ' '.join('-v {}="{}"'.format(*x) for x in env.items())
+        elif self.job_type == 'pbs':
+            env_string = '-v ' + ','.join('{}="{}"'.format(*x) for x in env.items())
+        return env_string
+
+    def generate_qsub_system_command(self, system_command, stdout_log, stderr_log):
+        if self.job_type == 'pbs' and ',' in system_command:
+            raise Exception(
+                "Can't have commas in 'system_command' when using 'pbs'.\n{}"
+                .format(system_command))
+        return self._qsub_system_command.format(
+            env_string=self.format_env({
+                **self.env,
+                'SYSTEM_COMMAND': system_command,
+                'STDOUT_LOG': stdout_log,
+                'STDERR_LOG': stderr_log
+            }))
 
 
 class JobSubmitter:
@@ -35,171 +207,160 @@ class JobSubmitter:
 
         While it would be safer call the Python executable directly,
         this does not seem to be supported on PBS (at least not on banting :()).
+
+    Attributes
+    ----------
+
+    head_node_type
+    head_node_ip
+
     """
 
     def __init__(
-        self,
-        connection_string,
-        local_path,
-        remote_path,
-        job_name,
-        *,
-        force_new_folder=True,
-        concurrent_job_limit=None,
-        queue='medium',
-        nproc=1,
-        walltime='02:00:00',  # hh:mm:ss
-        mem=None,
-        vmem=None,
-        email='noname@example.com',
-        email_opts='a',
-        qsub_shell='/bin/bash',  # Python does not work on Banting
-        qsub_script=None,
-        qsub_script_args={},
-        env=None
-    ):
+            self,
+            job_folder,  # can be relative to $HOME
+            connection_string=None,
+            *,
+            data_folder=None,  # can be relative to $HOME
+            remote_home=None,
+            remote_scratch=None,
+            concurrent_job_limit=None,
+            **kwargs):
         """.
 
         Parameters
         ----------
-        connection_string : str
-            Connection string for the batch job server (e.g. 'pbs://:@192.168.0.1')
-        local_path: str
-            Full path to the local working directory.
-        remote_path : str
-            Full path to the remove working directory.
-        job_name : str
-            Name of the job.
+        kwargs : dict, optional
+            Arguments to be passed to :class:`.QSub`.
 
         To do
         -----
-        - Add more options to the connecton string (username / pass)
+            - Add more options to the connecton string (username / pass).
         """
+        # Job info
+        self.job_name = op.basename(job_folder)
+        self.job_abspath = (
+            job_folder if op.isabs(job_folder) else op.join(op.expanduser('~'), job_folder))
+        self.job_relpath = op.relpath(self.job_abspath, op.expanduser('~'))
+
+        if data_folder is None:
+            self.data_abspath = self.job_abspath
+        elif not op.isabs(data_folder):
+            self.data_abspath = op.join(op.expanduser('~'), data_folder)
+        else:
+            self.data_abspath = data_folder
+        self.data_relpath = op.relpath(self.data_abspath, op.expanduser('~'))
+
+        # Connection string
         if connection_string in KNOWN_HOSTS:
-            connection_string = KNOWN_HOSTS[connection_string]
-        _db_info = parse_connection_string(connection_string)
-        head_node_type = _db_info['db_type']
-        head_node_ip = _db_info['db_url']
+            if remote_home is None:
+                remote_home = KNOWN_HOSTS[connection_string].remote_home
+            if remote_scratch is None:
+                remote_scratch = KNOWN_HOSTS[connection_string].remote_scratch
+            connection_string = KNOWN_HOSTS[connection_string].connection_string
 
-        # Required arguments
-        self.local_path = local_path
-        self.remote_path = remote_path
-        self.job_name = job_name
-        self.head_node_ip = head_node_ip
+        head_node_type = None
+        head_node_ip = None
+        if connection_string:
+            _db_info = parse_connection_string(connection_string)
+            logger.debug("_db_info: %s", _db_info)
+            head_node_type = _db_info['db_type']
+            head_node_ip = _db_info['db_url']
 
-        if head_node_type not in ['sge', 'pbs']:
+        if head_node_type not in ['local', 'sge', 'pbs']:
             raise ValueError("Wrong 'head_node_type': '{}'".format(head_node_type))
-        self.head_node_type = head_node_type
 
-        log_path = op.join(local_path, job_name)
-        try:
-            os.mkdir(log_path)
-        except FileExistsError:
-            if force_new_folder:
-                logger.error("Each job needs to create it's own empty log folder!")
-                raise
-            else:
+        self.head_node_type = head_node_type
+        self.head_node_ip = head_node_ip
+        self._ssh = None
+        self._connect()
+        assert self._ssh is not None
+        self.env = kwargs.get('env', {})
+
+        # Remote paths
+        assert self._ssh is not None
+        self.use_remote = remote_home is not None
+        if self.use_remote:
+            self.remote_home = self._format_remote_path(remote_home)
+            self.remote_scratch = self._format_remote_path(remote_scratch)
+            self.remote_job_abspath = op.join(self.remote_scratch, self.job_relpath)
+            self.remote_data_abspath = op.join(self.remote_scratch, self.data_relpath)
+        else:
+            self.remote_home = None
+            self.remote_scratch = None
+            self.remote_job_abspath = None
+            self.remote_data_abspath = None
+
+        # Make a job directory
+        assert self._ssh is not None
+        logger.debug("Use remote: %s", self.use_remote)
+        if self.use_remote:
+            system_command = 'ssh {head_node_ip} "mkdir -p {remote_job_abspath}"'.format(
+                head_node_ip=self.head_node_ip, remote_job_abspath=self.remote_job_abspath)
+            logger.debug(system_command)
+            cp = subprocess.run(shlex.split(system_command))
+            cp.check_returncode()
+        else:
+            try:
+                os.mkdir(self.job_abspath)
+            except FileExistsError:
                 logger.warning("Using an existing folder for log output. This is dangerous!!!")
         time.sleep(1)  # give some time to sync NFS
-        self.log_path = log_path
 
-        self.ssh = None
-
-        #
-        self.job_ids = []
-
-        # Default arguments
+        # QSub
+        assert self._ssh is not None
         self.concurrent_job_limit = concurrent_job_limit
-        self.queue = queue
-        self.nproc = nproc
-        self.walltime = walltime
-        self.mem = mem  # '10G'
-        self.vmem = vmem  # '12G'
-        self.email = email
-        self.email_opts = email_opts
-        self.qsub_shell = qsub_shell  # Python does not work on Banting
-        self.qsub_script = qsub_script
-        self.qsub_script_args = qsub_script_args  # key-value dict
-        if env is None:
-            env = {}
-        self.env = {
-            **env,
-            'SYSTEM_COMMAND': '{system_command}',
-            'STDOUT_LOG': op.join(self.log_path, '{job_id}.out'),
-            'STDERR_LOG': op.join(self.log_path, '{job_id}.err'),
-        }
+        if self.head_node_type != 'local':
+            qsub_script = self._get_qsub_script()
+            working_dir = self._get_working_dir()
+            self.qsub = QSub(
+                self.head_node_type, self.job_name, qsub_script, working_dir, **kwargs)
+
+    def _format_remote_path(self, remote_path):
+        assert remote_path is not None
+        if remote_path.startswith('$'):
+            remote_path, *_ = self._exec_system_command('echo "{}"'.format(remote_path))
+        return remote_path
+
+    def _get_qsub_script(self):
+        if 'PATH' in self.env:
+            PATH = self.env['PATH']
+        else:
+            PATH = '$HOME/anaconda/bin:$PATH'
+        system_command = 'export PATH="{}"; which qsub.sh'.format(PATH)
+        qsub_script, *_ = self._exec_system_command(system_command)
+        return qsub_script
+
+    def _get_working_dir(self):
+        if self.use_remote:
+            return self.remote_job_abspath
+        else:
+            return self.job_abspath
 
     # === Manage connection ===
 
     @contextlib.contextmanager
     def connect(self):
         """Open connection to head node."""
-        if self.ssh is not None:
-            logger.info("Already connected!")
-        else:
-            self._connect()
+        self._connect()
         yield
         self._disconnect()
 
     def _connect(self):
+        if self._ssh is not None:
+            logger.info("Already connected!")
+            return
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(self.head_node_ip)
-        self.ssh = ssh
+        self._ssh = ssh
         atexit.register(self._disconnect)
 
     def _disconnect(self):
         """Close connection to head node."""
-        self.ssh.close()
-        self.ssh = None
+        self._ssh.close()
+        self._ssh = None
         atexit.unregister(self._disconnect)
-
-    # === Format qsub command ===
-
-    @property
-    def qsub_system_command_template(self):
-        """Template of the system command which will submit the given job on the head node."""
-        # Global options are inside one set of curly braces
-        # Local options are inside two sets of curly braces
-        return """\
-qsub -S {qsub_shell} -N {job_name} -M {email} -m {email_opts} -o /dev/null -e /dev/null \
-{{nproc}}{{walltime}}{{mem}}{{vmem}} {{env_string}} \
-'{qsub_script}' {{qsub_script_args_string}} \
-"""
-
-    def _format_global(self, template):
-        return template.format(**self.__dict__)
-
-    def _format_local(self, template):
-        if self.head_node_type == 'sge':
-            cluster_opts = dict(
-                nproc=' -pe smp {}'.format(self.nproc),
-                walltime=' -l h_rt={}'.format(self.walltime),
-                mem=' -l mem_free={}'.format(self.mem) if self.mem else '',
-                vmem=' -l h_vmem={}'.format(self.vmem) if self.vmem else '',
-                env_string=' '.join('-v {}="{}"'.format(*x) for x in self.env.items()),
-                qsub_script_args_string=' '.join(
-                    '--{} {}'.format(key, value) for key, value in self.qsub_script_args.items()
-                ) if self.qsub_script_args else ''
-            )
-        elif self.head_node_type == 'pbs':
-            cluster_opts = dict(
-                nproc='-l nodes=1:ppn={}'.format(self.nproc),
-                walltime=',walltime={}'.format(self.walltime),
-                # mem: Maximum amount of physical memory used by the job.
-                # pmem: Maximum amount of physical memory used by any single process of the job.
-                mem=',pmem={}'.format(self.mem) if self.mem else '',
-                # vmem: Maximum amount of virtual memory used by all (conc) processes in the job.
-                # pvmem: Maximum amount of virtual memory used by any single process in the job.
-                vmem=',pvmem={}'.format(self.vmem) if self.vmem else '',
-                env_string='-v ' + ','.join('{}="{}"'.format(*x) for x in self.env.items()),
-                qsub_script_args_string='-F "{}"'.format(' '.join(
-                    '--{} {}'.format(key, value) for key, value in self.qsub_script_args.items()
-                )) if self.qsub_script_args else ''
-            )
-        else:
-            raise Exception
-        return template.format(**cluster_opts)
 
     # === Submit job (requires connection with server) ===
 
@@ -211,121 +372,160 @@ qsub -S {qsub_shell} -N {job_name} -M {email} -m {email_opts} -o /dev/null -e /d
             with js.connect():
                 js.submit([(0, 'echo "Hello world!"), (1, 'echo "Goodbye world!"')]
         """
-        if self.qsub_script is None:
-            system_command = 'export PATH="$HOME/anaconda/bin:$PATH"; which qsub.sh'
-            logger.debug(system_command)
-            self.qsub_script, _ = self._exec_system_command(system_command)
-            logger.debug(self.qsub_script)
-        results = []
-        _system_command_template = (
-            self._format_local(self._format_global(self.qsub_system_command_template))
-        )
-        for i, (job_id, system_command) in enumerate(iterable):
-            if self.head_node_type == 'pbs' and ',' in system_command:
-                raise Exception(
-                    "Can't have commas in 'system_command' when using 'pbs'.\n{}"
-                    .format(system_command))
+        if self._ssh is None:
+            self._connect()
+        p = concurrent.futures.ThreadPoolExecutor()
+        if self.head_node_type == 'local':
+            worker = self._local_worker
+        else:
+            worker = self._remote_worker
+        futures = []
+        for i, (job_id, job_data) in enumerate(iterable):
+            logger.debug("(i, job_id, job_data): (%s, %s, %s)", i, job_id, job_data)
+            assert 'system_command' in job_data
             self._respect_concurrent_job_limit(i)
-            system_command = _system_command_template.format(
-                job_id=job_id,
-                system_command=system_command
-            )
-            logger.debug(system_command)
-            stdout, stderr = self._exec_system_command(system_command)
-            time.sleep(0.05)
-            results.append((stdout, stderr, ))
-            self.job_ids.append(job_id)
-        return results
+            futures.append(p.submit(worker, i, job_id, dict(job_data)))
+            # A short break is required or else you can get weird errors:
+            # "Secsh channel 15 open FAILED: open failed: Administratively prohibited"
+            time.sleep(0.01)
+        p.shutdown(wait=False)
+        return futures
 
-    def submit_local(self, iterable):
-        def worker(idx_system_command):
-            idx, system_command = idx_system_command
-            cp = subprocess.run(system_command, shell=True)
-            return cp
+    def _local_worker(self, i, job_id, job_data):
+        system_command = job_data['system_command']
+        with open(self.stdout_log.format(job_id), 'w') as stdout, \
+                open(self.stderr_log.format(job_id), 'w') as stderr:
+            cp = subprocess.run(
+                system_command, stdout=stdout, stderr=stderr, universal_newlines=True, shell=True)
+            stderr.write('DONE!\n')
+        return cp.returncode
 
-        with concurrent.futures.ThreadPoolExecutor() as p:
-            results = p.map(worker, iterable)
-
-        return results
+    def _remote_worker(self, i, job_id, job_data):
+        system_command = job_data['system_command']
+        qsub_system_command = self.qsub.generate_qsub_system_command(
+            system_command, self.stdout_log.format(job_id), self.stderr_log.format(job_id))
+        stdout, *_ = self._exec_system_command(qsub_system_command)
+        time.sleep(0.02)
+        return stdout
 
     @property
-    def num_running_jobs(self):
-        system_command = 'qstat -u "$USER" | grep "$USER" | grep -i " r  " | wc -l'
-        stdout, stderr = self._exec_system_command(system_command)
-        num_running_jobs = int(stdout)
-        return num_running_jobs
+    def stdout_log(self):
+        if self.head_node_type == 'local':
+            stdout_log = op.join(self.job_abspath, '{}.out')
+        else:
+            stdout_log = op.join(
+                self.job_abspath if not self.use_remote else self.remote_job_abspath, '{}.out')
+        return stdout_log
+
+    @property
+    def stderr_log(self):
+        if self.head_node_type == 'local':
+            stderr_log = op.join(self.job_abspath, '{}.err')
+        else:
+            stderr_log = op.join(
+                self.job_abspath if not self.use_remote else self.remote_job_abspath, '{}.err')
+        return stderr_log
 
     @property
     def num_submitted_jobs(self):
+        if self.head_node_type == 'local':
+            return None
         system_command = 'qstat -u "$USER" | grep "$USER" | wc -l'
-        stdout, stderr = self._exec_system_command(system_command)
+        stdout, *_ = self._exec_system_command(system_command)
         num_submitted_jobs = int(stdout)
         return num_submitted_jobs
 
+    @property
+    def num_running_jobs(self):
+        if self.head_node_type == 'local':
+            return None
+        system_command = 'qstat -u "$USER" | grep "$USER" | grep -i " r  " | wc -l'
+        stdout, *_ = self._exec_system_command(system_command)
+        num_running_jobs = int(stdout)
+        return num_running_jobs
+
     def _exec_system_command(self, system_command):
+        assert self._ssh is not None
         n_tries = 0
-        stdout = 'x.x'
-        stderr = 'x.x'
+        stdout = '...'
+        stderr = '...'
+        logger.debug(system_command)
         while n_tries < 5 and stderr:
             if n_tries:
                 delay = (1 * n_tries)
                 logger.debug('Sleeping for {} seconds...'.format(delay))
                 time.sleep(delay)
             n_tries += 1
-            stdin_fh, stdout_fh, stderr_fh = self.ssh.exec_command(system_command, get_pty=True)
+            stdin_fh, stdout_fh, stderr_fh = self._ssh.exec_command(
+                system_command, get_pty=True, environment=self.env)
             stdout = stdout_fh.read().decode().strip()
             if stdout:
-                logger.debug(stdout)
+                logger.info(stdout)
             stderr = stderr_fh.read().decode().strip()
             if stderr:
-                logger.error(stderr)
+                logger.warning(stderr)
         return stdout, stderr
 
     def _respect_concurrent_job_limit(self, i):
-            # Limit the number of jobs running simultaneously
-            STEP_SIZE = 50
-            DELAY = 120
-            if self.concurrent_job_limit is not None and ((i + 1) % STEP_SIZE) == 0:
-                while (self.num_submitted_jobs + STEP_SIZE) > self.concurrent_job_limit:
-                    logger.info(
-                        "'concurrent_job_limit' reached! Sleeping for {:.0f} minutes..."
-                        .format(DELAY / 60))
-                    time.sleep(DELAY)
+        # Limit the number of jobs running simultaneously
+        STEP_SIZE = 50
+        DELAY = 120
+        if self.concurrent_job_limit is not None and ((i + 1) % STEP_SIZE) == 0:
+            while (self.num_submitted_jobs + STEP_SIZE) > self.concurrent_job_limit:
+                logger.info(
+                    "'concurrent_job_limit' reached! Sleeping for {:.0f} minutes..."
+                    .format(DELAY / 60))
+                time.sleep(DELAY)
+
+    # === Sync ===
+
+    @retry(
+        retry_on_exception=lambda exc: isinstance(exc, subprocess.SubprocessError),
+        stop_max_attempt_number=3)
+    def _sync_remote(self, local_abspath, remote_abspath):
+        system_command = """\
+rsync -az --update --exclude '*.tmp' {local_abspath}/ {head_node_ip}:{remote_abspath}/ \
+""".format(
+            local_abspath=local_abspath, head_node_ip=self.head_node_ip,
+            remote_abspath=remote_abspath)
+        logger.debug(system_command)
+        cp = subprocess.run(
+            shlex.split(system_command), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True)
+        cp.check_returncode()
+
+    @retry(
+        retry_on_exception=lambda exc: isinstance(exc, subprocess.SubprocessError),
+        stop_max_attempt_number=3)
+    def _sync_local(self, local_abspath, remote_abspath):
+        system_command = """\
+rsync -az --update --exclude '*.tmp' {head_node_ip}:{remote_abspath}/ {local_abspath}/ \
+""".format(
+            local_abspath=local_abspath, head_node_ip=self.head_node_ip,
+            remote_abspath=remote_abspath)
+        logger.debug(system_command)
+        cp = subprocess.run(
+            shlex.split(system_command), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            universal_newlines=True)
+        cp.check_returncode()
 
     def sync_remote(self):
-        """Move data from local working directory to remote working directory."""
-        system_command = 'ssh {head_node_ip} "mkdir -p {remote_path}"'.format(
-            head_node_ip=self.head_node_ip,
-            remote_path=self.remote_path
-        )
-        logger.debug(system_command)
-        cp = subprocess.run(shlex.split(system_command))
-        cp.check_returncode()
-
-        system_command = "rsync -a {local_path}/ {head_node_ip}:{remote_path}/".format(
-            local_path=self.local_path,
-            head_node_ip=self.head_node_ip,
-            remote_path=self.remote_path,
-        )
-        logger.debug(system_command)
-        cp = subprocess.run(shlex.split(system_command))
-        cp.check_returncode()
+        self._sync_remote(self.job_abspath, self.remote_job_abspath)
 
     def sync_local(self):
-        """Move data from remote working directory to local working directory."""
-        # system_command = "rsync {}"
-        system_command = "rsync -a {head_node_ip}:{remote_path}/ {local_path}/".format(
-            local_path=self.local_path,
-            head_node_ip=self.head_node_ip,
-            remote_path=self.remote_path,
-        )
-        logger.debug(system_command)
-        cp = subprocess.run(shlex.split(system_command))
-        cp.check_returncode()
+        self._sync_local(self.job_abspath, self.remote_job_abspath)
+
+    def sync_data(self):
+        if self.data_abspath is None or self.remote_data_abspath is None:
+            logger.warning(
+                "Data folders are not set! data_abspath: '{}', remote_data_abspath: '{}'"
+                .format(self.data_abspath, self.remote_data_abspath))
+        self._sync_remote(self.data_abspath, self.remote_data_abspath)
+        self._sync_local(self.data_abspath, self.remote_data_abspath)
 
     # === Job status ===
 
-    def job_status(self, iterable=None):
+    def job_status(self, iterable):
         """Return a :class:`pandas.DataFrame` with the status and results of each submitted job.
 
         Parameters
@@ -335,53 +535,41 @@ qsub -S {qsub_shell} -N {job_name} -M {email} -m {email_opts} -o /dev/null -e /d
             ``system_command`` can be None, in which case the ``system_command`` column
             of the returned DataFrame will be empty.
         """
-        if iterable is None:
-            iterable = self.job_ids[:]
-        results_all = []
-        for job_id in iterable:
-            system_command = None
-            if not isinstance(job_id, (int, str)):
-                if len(job_id) == 1:
-                    job_id = job_id[0]
-                elif len(job_id) == 2:
-                    job_id, system_command = job_id
-                else:
-                    raise Exception
-            results = {'job_id': job_id, 'status': None, 'system_command': system_command}
-            results_all.append(results)
-            # Refresh NFS
-            os.listdir(self.log_path)
-            #
-            stdout_file = op.join(self.log_path, '{}.out'.format(job_id))
-            stderr_file = op.join(self.log_path, '{}.err'.format(job_id))
-            # STDERR
+        # Refresh NFS
+        os.listdir(op.join(self.job_abspath))
+        results = []
+        for i, (job_id, job_data) in enumerate(iterable):
+            row = {'job_id': job_id, **job_data}
+            results.append(row)
+            # Output files
+            stdout_log = self.stdout_log.format(job_id)
+            stderr_log = self.stderr_log.format(job_id)
+            # === STDERR ===
             try:
-                ifh = open(stderr_file + '.tmp', 'rt')
+                ifh = open(stderr_log + '.tmp', 'rt')
             except FileNotFoundError:
                 try:
-                    ifh = open(stderr_file, 'rt')
+                    ifh = open(stderr_log, 'rt')
                 except FileNotFoundError:
-                    results['status'] = 'missing'
+                    row['status'] = 'missing'
                     continue
-            stderr_file_data = ifh.read().strip()
+            stderr_file_data = ifh.read().strip().lower()
             ifh.close()
-            if stderr_file_data.endswith('ERROR!'):
-                results['status'] = 'error'
+            if stderr_file_data.endswith('error!'):
+                row['status'] = 'error'
                 continue
-            elif stderr_file_data.endswith('DONE!'):
-                results['status'] = 'done'
+            elif stderr_file_data.endswith('done!'):
+                row['status'] = 'done'
             else:
-                results['status'] = 'frozen'
+                row['status'] = 'frozen'
                 continue
-            # STDOUT
-            ifh = open(stdout_file, 'r')
+            # === STDOUT ===
+            with open(stdout_log, 'r') as ifh:
+                stdout_data = ifh.read().strip()
             try:
-                results.update(json.load(ifh))
+                row.update(json.loads(stdout_data))
             except json.JSONDecodeError:
-                # pass
-                results['status'] = 'misformed output'
-            finally:
-                ifh.close()
-        assert len(results_all) == len(iterable)
-        results_df = pd.DataFrame(results_all)
+                row['stdout_data'] = stdout_data
+        assert len(results) == len(iterable)
+        results_df = pd.DataFrame(results)
         return results_df
