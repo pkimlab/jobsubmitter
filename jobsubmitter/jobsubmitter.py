@@ -333,9 +333,9 @@ class JobSubmitter:
 
     def _get_working_dir(self):
         if self.use_remote:
-            return self.remote_job_abspath
+            return self.remote_data_abspath
         else:
-            return self.job_abspath
+            return self.data_abspath
 
     # === Manage connection ===
 
@@ -387,7 +387,7 @@ class JobSubmitter:
             futures.append(p.submit(worker, i, job_id, dict(job_data)))
             # A short break is required or else you can get weird errors:
             # "Secsh channel 15 open FAILED: open failed: Administratively prohibited"
-            time.sleep(0.01)
+            time.sleep(0.05)
         p.shutdown(wait=False)
         return futures
 
@@ -570,6 +570,6 @@ rsync -az --update --exclude '*.tmp' {head_node_ip}:{remote_abspath}/ {local_abs
                 row.update(json.loads(stdout_data))
             except json.JSONDecodeError:
                 row['stdout_data'] = stdout_data
-        assert len(results) == len(iterable)
-        results_df = pd.DataFrame(results)
+        assert len(results) == (i + 1)
+        results_df = pd.DataFrame(results).set_index('job_id')
         return results_df
