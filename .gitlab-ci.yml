@@ -70,11 +70,10 @@ build-py36:
     - conda index /opt/conda/conda-bld/
     - conda install -y -q --use-local "python=$PYTHON_VERSION" $CI_PROJECT_NAME >/dev/null
     # Test
-    - pip install -q flake8 pytest pytest-cov codecov hypothesis
+    - pip install -q flake8 pytest pytest-cov pytest-logging hypothesis
     - flake8
-    - py.test
-    - codecov -t $CODECOV_TOKEN
-  coverage: /^TOTAL.*(\d+\%)/
+    - py.test --cov="${SITE_PACKAGES}/${CI_PROJECT_NAME}"
+  coverage: /^TOTAL.* (\d+\%)/
 
 test-py35:
   <<: [*conda_configure, *test]
