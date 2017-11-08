@@ -1,6 +1,4 @@
-
-
-def iterate_parameters(_params=None, **parameter_grid):
+def iterate_parameters(global_params=None, **parameter_grid):
     """.
 
     Parameters
@@ -16,17 +14,19 @@ def iterate_parameters(_params=None, **parameter_grid):
     [{'a': 1, 'b': 3}, {'a': 1, 'b': 4}, {'a': 2, 'b': 3}, {'a': 2, 'b': 4}]
     """
     # Don't modify dictionaries in-place
-    if _params is None:
-        _params = dict()
+    if global_params is None:
+        params = dict()
+    else:
+        params = global_params.copy()
     # Terminal case
     if not parameter_grid:
-        yield _params
+        yield params
         return
     # Recurse
     key, values = parameter_grid.popitem()
     for value in values:
-        _params[key] = value
+        params[key] = value
         try:
-            yield from iterate_parameters(_params.copy(), **parameter_grid)
+            yield from iterate_parameters(params.copy(), **parameter_grid)
         except StopIteration:
             continue

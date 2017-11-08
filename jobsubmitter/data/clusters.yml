@@ -1,0 +1,38 @@
+local:
+  connection_string: "local://:@127.0.0.1"
+bc:
+  connection_string: "pbs://:@192.168.233.68"
+  concurrent_job_limit: 800
+bc2:
+  connection_string: "pbs://:@192.168.233.150"
+  concurrent_job_limit: 800
+beagle:
+  connection_string: "sge://:@192.168.6.201"
+scinet-gpc:
+  connection_string: "pbs://:@login.scinet.utoronto.ca-gpc02"
+  remote_home: "$HOME"
+  remote_scratch: "$SCRATCH"
+cq-ms2:
+  connection_string: "pbs://:@pmkim-ms.ccs.usherbrooke.ca"
+  remote_home: "$HOME"
+  remote_scratch: "$HOME"
+  concurrent_job_limit:
+cq-mp2:
+  connection_string: "pbs://:@pmkim-mp.ccs.usherbrooke.ca"
+  remote_home: "$HOME"
+  remote_scratch: "$HOME"
+  concurrent_job_limit:
+cq-guillimin:
+  connection_string: "pbs://:@guillimin.hpc.mcgill.ca"
+  remote_home: "$HOME"
+  remote_scratch: "$SCRATCH"
+cedar:
+  connection_string: ""
+  remote_home: ""
+  remote_scratch: ""
+  concurrent_job_limit:
+graham:
+  connection_string: ""
+  remote_home: ""
+  remote_scratch: ""
+  concurrent_job_limit:
