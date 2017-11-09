@@ -14,15 +14,14 @@ from typing import Any, Dict, Optional, Union
 
 import pandas as pd
 import paramiko
-from retrying import retry
 from tqdm import tqdm
 
 from kmtools import system_tools
 from kmtools.db_tools import ConOpts, parse_connection_string
 
 from .cluster_opts import ClusterOpts
-from .job_opts import (JobOpts, PBSSystemCommand, SGESystemCommand,
-                       SLURMSystemCommand, SystemCommand)
+from .job_opts import JobOpts, PBSSystemCommand, SGESystemCommand, SLURMSystemCommand, SystemCommand
+from .utils import execute_remotely
 
 logging.getLogger("paramiko").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -103,7 +102,7 @@ class JobSubmitter:
             return self._qsub_script
         PATH = self.env.get('PATH', '$PATH') if self.env is not None else '$PATH'
         system_command = f"""export PATH="{PATH}"; which qsub.sh"""
-        self._qsub_script = self._exec_system_command(system_command)
+        self._qsub_script = execute_remotely(system_command, self.ssh)
         return self._qsub_script
 
     @property
@@ -131,13 +130,13 @@ class JobSubmitter:
     # #########################################################################
 
     def _set_remote_paths(self) -> None:
-        if self.con_opts.remote_home:
+        if self.cluster_opts.remote_home:
             assert self.con_opts.remote_scratch is not None
             job_relpath = op.relpath(self.job_abspath, op.expanduser('~'))
             data_relpath = op.relpath(self.data_abspath, op.expanduser('~'))
-            if self.con_opts.remote_home.startswith('$'):
+            if self.cluster_opts.remote_home.startswith('$'):
                 self.con_opts = self.con_opts._replace(
-                    remote_home=self._format_remote_path(self.con_opts.remote_home))
+                    remote_home=self._format_remote_path(self.cluster_opts.remote_home))
             if self.con_opts.remote_scratch.startswith('$'):
                 self.con_opts = self.con_opts._replace(
                     remote_scratch=self._format_remote_path(self.con_opts.remote_scratch))
@@ -146,17 +145,17 @@ class JobSubmitter:
 
     def _create_job_dir(self) -> None:
         """Create a folder for storing job logs."""
-        if self.con_opts.remote_home:
+        if self.cluster_opts.remote_home:
             system_command = f'ssh {self.con_opts.url} "mkdir -p {self.remote_job_abspath}"'
             logger.debug(system_command)
             subprocess.check_call(shlex.split(system_command))
         else:
-            os.mkdir(self.job_abspath)
+            os.makedirs(self.job_abspath, exist_ok=True)
         time.sleep(1)  # Give some time to sync NFS
 
     def _format_remote_path(self, remote_path):
         if remote_path.startswith('$'):
-            remote_path = self._exec_system_command('echo "{}"'.format(remote_path))
+            remote_path = execute_remotely('echo "{}"'.format(remote_path), self.ssh)
         return remote_path
 
     # #########################################################################
@@ -176,7 +175,7 @@ class JobSubmitter:
             return
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(self.head_node_ip)
+        ssh.connect(self.con_opts.url)
         self.ssh = ssh
         atexit.register(self._disconnect)
 
@@ -190,8 +189,8 @@ class JobSubmitter:
     # Submit jobs (requires connection with server)
     # #########################################################################
 
-    def _iter_rows(self, rows):
-        for i, row in enumerate(tqdm(rows, total=len(rows), ncols=100)):
+    def _itertuples(self, df):
+        for i, row in enumerate(tqdm(df.itertuples(), total=len(df), ncols=100)):
             logger.debug("i: %s, row: %s", i, row)
             assert hasattr(row, 'Index') and hasattr(row, 'system_command')
             self._respect_concurrent_job_limit(i)
@@ -227,7 +226,7 @@ class JobSubmitter:
         # Submit multiple jobs in parallel
         futures = []
         pool = concurrent.futures.ThreadPoolExecutor()
-        for row in df.itertuples():
+        for row in self._itertuples(df):
             future = pool.submit(worker, row)
             futures.append(future)
             time.sleep(0.02)
@@ -256,7 +255,7 @@ class JobSubmitter:
             'HOST_IP': self.host_ip,
         }
         system_command = tq.get_system_command(env)
-        stdout = self._exec_system_command(system_command)
+        stdout = execute_remotely(system_command, self.ssh)
         # A short break is required or else you can get weird errors:
         # "Secsh channel 15 open FAILED: open failed: Administratively prohibited"
         time.sleep(0.02)
@@ -268,7 +267,7 @@ class JobSubmitter:
         if self.con_opts.name == 'local':
             return None
         system_command = 'qstat -u "$USER" | grep "$USER" | wc -l'
-        stdout = self._exec_system_command(system_command)
+        stdout = execute_remotely(system_command, self.ssh)
         try:
             num_submitted_jobs = int(stdout)
         except ValueError:
@@ -281,8 +280,8 @@ class JobSubmitter:
         if self.con_opts.name == 'local':
             return None
         system_command = 'qstat -u "$USER" | grep "$USER" | grep -i " r  " | wc -l'
-        stdout = self._exec_system_command(system_command)
-        logger.info(stdout)
+        stdout = execute_remotely(system_command, self.ssh)
+        logger.debug(stdout)
         num_running_jobs = int(stdout)
         return num_running_jobs
 
@@ -292,8 +291,8 @@ class JobSubmitter:
         DELAY = 120
         if self.cluster_opts.concurrent_job_limit is not None and ((job_idx + 1) % STEP_SIZE) == 0:
             while (self.num_submitted_jobs + STEP_SIZE) > self.cluster_opts.concurrent_job_limit:
-                logger.info("'concurrent_job_limit' reached! Sleeping for {:.0f} minutes..."
-                            .format(DELAY / 60))
+                logger.info("'concurrent_job_limit' reached! Sleeping for {:.0f} minutes...".format(
+                    DELAY / 60))
                 time.sleep(DELAY)
 
     # #########################################################################
@@ -307,7 +306,7 @@ class JobSubmitter:
             - Multithrading does not make it faster :(.
         """
         os.listdir(op.join(self.job_abspath))  # refresh NFS
-        results = [self._read_results(row) for row in df.itertuples()]
+        results = [self._read_results(row) for row in self._itertuples(df)]
         results_df = pd.DataFrame(results).set_index('Index')
         return results_df
 
@@ -316,7 +315,7 @@ class JobSubmitter:
         stdout_log = self.get_stdout_log(row.Index)
         stderr_log = self.get_stderr_log(row.Index)
         # === STDERR ===
-        data = {}
+        data = row._asdict()
         try:
             ifh = open(stderr_log + '.tmp', 'rt')
         except FileNotFoundError:
@@ -348,9 +347,7 @@ class JobSubmitter:
     # Sync remote and local folders
     # #########################################################################
 
-    @retry(
-        retry_on_exception=lambda exc: isinstance(exc, subprocess.SubprocessError),
-        stop_max_attempt_number=3)
+    @system_tools.retry_subprocess
     def sync_logs(self):
         """Copy job logs from the remote job folder to the local job folder."""
         system_command = dedent(f"""\
@@ -360,9 +357,7 @@ class JobSubmitter:
             """).replace('\n', ' ')
         system_tools.execute(system_command)
 
-    @retry(
-        retry_on_exception=lambda exc: isinstance(exc, subprocess.SubprocessError),
-        stop_max_attempt_number=3)
+    @system_tools.retry_subprocess
     def sync_data(self):
         """Bring the remote and local data folders in sync."""
         if self.data_abspath is None or self.remote_data_abspath is None:
@@ -383,20 +378,3 @@ class JobSubmitter:
             {self.data_abspath}/
             """).replace('\n', ' ')
         system_tools.execute(system_command)
-
-    @retry(
-        retry_on_exception=lambda exc: isinstance(exc, paramiko.ChannelException),
-        stop_max_attempt_number=5,
-        wait_exponential_multiplier=1_000,
-        wait_exponential_max=10_000)
-    def _exec_system_command(self, system_command: str) -> str:
-        logger.info("system_command: '%s'", system_command)
-        stdin_fh, stdout_fh, stderr_fh = self.ssh.exec_command(system_command, get_pty=True)
-        stdout = stdout_fh.read().decode().strip()
-        stderr = stderr_fh.read().decode().strip()
-        if stdout:
-            logger.debug(stdout)
-        if stderr:
-            logger.warning(stderr)
-            raise paramiko.ChannelException(0, stderr)
-        return stdout
