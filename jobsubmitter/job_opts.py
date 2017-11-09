@@ -20,7 +20,6 @@ class JobOpts(NamedTuple):
         qsub_shell: The user login shell. This is typically ``/bin/bash``,
             since, for example, the ``python`` shell does not work on banting :(.
         qsub_script_args: Arguments for the ``qsub.sh`` shell script.
-        env: Environment variables that should be passed to the job.
     """
     job_name: str
     queue: str = 'medium'
