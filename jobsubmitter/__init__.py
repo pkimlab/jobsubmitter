@@ -5,7 +5,10 @@
 
    jobsubmitter
    utils
+   cluster_opts
+   job_opts
 """
-# flake8: noqa
 from .utils import *
-from .jobsubmitter import JobSubmitter
+from .cluster_opts import *
+from .job_opts import *
+from .jobsubmitter import *
