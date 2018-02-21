@@ -15,22 +15,25 @@ Package for running jobs on Sun Grid Engine (SGE) / PBS / Slurm clusters.
 ## Example
 
 ```python
-import jobsubmitter
+from jobsubmitter import JobOpts, JobSubmitter
 
 JOB_ID = 'job_0'
-DATA_ID = 'adjacency_matrix_3.parquet'
-
-JOB_DIR = Path(f"~/datapkg/{os.environ['DB_SCHEMA']}/notebooks/{NOTEBOOK_NAME}/{JOB_ID}")
-DATA_DIR = Path(f"~/datapkg/{os.environ['DB_SCHEMA']}/notebooks/{NOTEBOOK_NAME}/{DATA_ID}")
 
 ENV = {
     'PATH': '/home/kimlab1/strokach/anaconda/bin:/usr/local/bin:/usr/bin:/bin',
     'OMP_NUM_THREADS': '1',
-    'OPENMM_CPU_THREADS': '1',
 }
 
-js = jobsubmitter.JobSubmitter('beagle', JOB_DIR, DATA_DIR, ENV)
-jo = jobsubmitter.JobOpts(JOB_ID, nproc=1, queue='medium', walltime='48:00:00', mem='16G')
+jo = jobsubmitter.JobOpts(
+    job_id=JOB_ID,
+    working_dir=Path.cwd(),
+    nproc=1,
+    queue='medium',
+    walltime='24:00:00',
+    mem='16G',
+    env=ENV,
+)
+js = jobsubmitter.JobSubmitter('localhost')
 
 futures = js.submit(system_commands, jo, deplay=0.1)
 ```
