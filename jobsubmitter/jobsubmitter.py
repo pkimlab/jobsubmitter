@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional, Union
 
 import pandas as pd
 import paramiko
-from tqdm import tqdm
+from tqdm import tqdm_notebook as tqdm
 
 from kmtools import system_tools
 from kmtools.db_tools import ConOpts, parse_connection_string
@@ -95,15 +95,6 @@ class JobSubmitter:
             return self._host_ip
         self._host_ip, _ = self.ssh.get_transport().sock.getsockname()
         return self._host_ip
-
-    @property
-    def qsub_script(self) -> str:
-        if self._qsub_script:
-            return self._qsub_script
-        PATH = self.env.get('PATH', '$PATH') if self.env is not None else '$PATH'
-        system_command = f"""export PATH="{PATH}"; which qsub.sh"""
-        self._qsub_script = execute_remotely(system_command, self.ssh)
-        return self._qsub_script
 
     @property
     def job_working_dir(self) -> str:
@@ -196,7 +187,7 @@ class JobSubmitter:
             self._respect_concurrent_job_limit(i)
             yield row
 
-    def submit(self, df: pd.DataFrame, job_opts: JobOpts):
+    def submit(self, df: pd.DataFrame, job_opts: JobOpts, deplay=0.02):
         """Sumit jobs to the cluster.
 
         You have to establish a connection first (explicit is better than implicit)::
@@ -212,14 +203,14 @@ class JobSubmitter:
         if self.con_opts.name == 'local':
             worker = self._local_worker
         elif self.con_opts.name == 'sge':
-            tq = SGESystemCommand(self.qsub_script, self.job_working_dir, job_opts)
-            worker = functools.partial(self._remote_worker, tq=tq)
+            tq = SGESystemCommand(self.qsub_script, self.job_working_dir)
+            worker = functools.partial(self._remote_worker, tq=tq, jo=job_opts)
         elif self.con_opts.name == 'pbs':
-            tq = PBSSystemCommand(self.qsub_script, self.job_working_dir, job_opts)
-            worker = functools.partial(self._remote_worker, tq=tq)  # type: ignore
+            tq = PBSSystemCommand(self.qsub_script, self.job_working_dir)
+            worker = functools.partial(self._remote_worker, tq=tq, jo=job_opts)
         elif self.con_opts.name == 'slurm':
-            tq = SLURMSystemCommand(self.qsub_script, self.job_working_dir, job_opts)
-            worker = functools.partial(self._remote_worker, tq=tq)  # type: ignore
+            tq = SLURMSystemCommand(self.qsub_script, self.job_working_dir)
+            worker = functools.partial(self._remote_worker, tq=tq, jo=job_opts)
         else:
             raise ValueError(f"Wrong head node type: '{self.con_opts.name}'")
 
@@ -229,7 +220,7 @@ class JobSubmitter:
         for row in self._itertuples(df):
             future = pool.submit(worker, row)
             futures.append(future)
-            time.sleep(0.02)
+            time.sleep(deplay)
         pool.shutdown(wait=False)
         return futures
 
@@ -306,9 +297,13 @@ class JobSubmitter:
             - Multithrading does not make it faster :(.
         """
         os.listdir(op.join(self.job_abspath))  # refresh NFS
-        results = [self._read_results(row) for row in self._itertuples(df)]
-        results_df = pd.DataFrame(results).set_index('Index')
-        return results_df
+        results = [
+            self._read_results(row) for row in tqdm(df.itertuples(), total=len(df), ncols=100)
+        ]
+        if not results:
+            return pd.DataFrame(columns=['status_', 'Index'])
+        else:
+            return pd.DataFrame(results).set_index('Index')
 
     def _read_results(self, row):
         # Output files
@@ -322,17 +317,17 @@ class JobSubmitter:
             try:
                 ifh = open(stderr_log, 'rt')
             except FileNotFoundError:
-                data['status'] = 'missing'
+                data['status_'] = 'missing'
                 return data
         stderr_file_data = ifh.read().strip().lower()
         ifh.close()
         if stderr_file_data.endswith('error!'):
-            data['status'] = 'error'
+            data['status_'] = 'error'
             return data
         elif stderr_file_data.endswith('done!'):
-            data['status'] = 'done'
+            data['status_'] = 'done'
         else:
-            data['status'] = 'frozen'
+            data['status_'] = 'frozen'
             return data
         # === STDOUT ===
         with open(stdout_log, 'r') as ifh:

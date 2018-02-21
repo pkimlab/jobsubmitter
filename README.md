@@ -7,6 +7,10 @@
 
 Package for running jobs on Sun Grid Engine (SGE) / Torque / Slurm clusters.
 
+## Goals
+
+- Provide an easy way to submit batch jobs from within a Jupyter notebook running on one of the nodes in the cluster.
+
 ## Example
 
 ```python

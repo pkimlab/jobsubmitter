@@ -1,13 +1,15 @@
 import os.path as op
-from typing import Dict, NamedTuple, Optional, Union
+from typing import Dict, Optional, Union
 
+import attr
 import yaml
 
 DATA_DIR = op.join(op.dirname(op.abspath(__file__)), 'data')
 DEFAULT_CLUSTERS_FILE = op.join(DATA_DIR, 'clusters.yml')
 
 
-class ClusterOpts(NamedTuple):
+@attr.s(auto_attribs=True, slots=True)
+class ClusterOpts:
     """Options that are specific to each cluster.
 
     Notes:
