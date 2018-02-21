@@ -1,0 +1,40 @@
+package:
+  name: jobsubmitter
+  version: 0.0.2
+
+source:
+  path: ../
+
+build:
+  script: $PYTHON setup.py install --single-version-externally-managed --record=record.txt
+  number: 0
+
+requirements:
+  build:
+    - python
+    - pandoc
+    - pypandoc
+  run:
+    - python
+    - click
+
+test:
+  requires:
+    - flake8
+    - isort
+    - mypy
+    - pytest
+    - pytest-cov
+    - pytest-benchmark
+  imports:
+    - jobsubmitter
+
+outputs:
+  - name: jobsubmitter
+    type: conda
+  - type: wheel
+
+about:
+  home: http://gitlab.com/ostrokach/jobsubmitter
+  license: MIT License
+  summary: "Package for running jobs on Sun Grid Engine (SGE) / PBS / Slurm clusters."

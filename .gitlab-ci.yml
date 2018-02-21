@@ -7,7 +7,7 @@ stages:
   - deploy
 
 cache:
-  key: ${CI_COMMIT_REF_NAME}-1
+  key: ${CI_COMMIT_REF_NAME}
   paths:
     - .conda_packages
 
@@ -68,7 +68,6 @@ lint:
 .build: &build
   stage: build
   script:
-    # Build conda packages
     - cd "${CI_PROJECT_DIR}/.conda"
     - conda build .
       --no-test
@@ -103,10 +102,10 @@ build-py36:
 
 test-py36:
   <<: [*conda_configure, *test]
-  variables:
-    <<: [*py36]
   dependencies:
     - build-py36
+  variables:
+    <<: [*py36]
 
 # === Pages ===
 
@@ -117,29 +116,25 @@ test-py36:
     - cp -r $CI_PROJECT_DIR/conda-bld/* /opt/conda/conda-bld/
     - conda index /opt/conda/conda-bld/
     # Install required packages
-    - conda install -yq --use-local "python=$PYTHON_VERSION" ${CI_PROJECT_NAME}
+    - conda install -yq --use-local "python=$PYTHON_VERSION" $CI_PROJECT_NAME
     - conda install -yq nbconvert ipython ipykernel pandoc
     - pip install -q sphinx sphinx_rtd_theme recommonmark nbsphinx
     # Build docs
     - (cd docs && sphinx-apidoc ../${CI_PROJECT_NAME} -o api/generated -TeMP)
     - sphinx-build docs public
+  dependencies:
+    - build-py36
+  variables:
+    <<: [*py36]
 
 test-pages:
   <<: [*conda_configure, *docs]
-  variables:
-    <<: [*py36]
-  dependencies:
-    - build-py36
   except:
     - master
     - tags
 
 pages:
   <<: [*conda_configure, *docs]
-  variables:
-    <<: [*py36]
-  dependencies:
-    - build-py36
   only:
     - master
     - tags
