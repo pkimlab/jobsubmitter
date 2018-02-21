@@ -1,15 +1,19 @@
+#!/usr/bin/env python
+"""The setup script."""
 import os.path as op
-from setuptools import setup, find_packages
+import warnings
+
+from setuptools import find_packages, setup
 
 
 def _read_md_as_rst(file):
-    """Read MarkDown file and convert it to ReStructuredText."""
-    from pypandoc import convert
-    return convert(file, 'rst')
+    """Read Markdown file and convert it to ReStructuredText."""
+    from pypandoc import convert_file
+    return convert_file(file, 'rst', format='md')
 
 
 def _read_md_as_md(file):
-    """Read MarkDown file."""
+    """Read Markdown file."""
     with open(op.join(op.dirname(__file__), file)) as ifh:
         return ifh.read()
 
@@ -19,27 +23,46 @@ def read_md(file):
     try:
         return _read_md_as_rst(file)
     except ImportError:
-        print("WARNING: pypandoc module not found, could not convert Markdown to RST!")
+        warnings.warn("pypandoc module not found, could not convert Markdown to RST!")
         return _read_md_as_md(file)
 
+
+requirements = [
+    'Click>=6.0',
+    # TODO: put package requirements here
+]
+
+test_requirements = [
+    'pytest',
+    # TODO: put package test requirements here
+]
 
 setup(
     name='jobsubmitter',
     version='0.0.2',
-    author='kimlab.org',
+    description="Package for running jobs on Sun Grid Engine (SGE) / PBS / Slurm clusters.",
+    long_description=read_md('README.md') + '\n\n' + read_md('HISTORY.md'),
+    author="Alexey Strokach",
     author_email='alex.strokach@utoronto.ca',
-    url="https://github.com/kimlaborg/jobsubmitter",
-    description="Package for running jobs on Sun Grid Engine (SGE) / Torque / PBS.",
-    long_description=read_md("README.md"),
-    classifiers=[
-        "License :: OSI Approved :: MIT License",
-        "Programming Language :: Python :: 3 :: Only",
-        "Topic :: Scientific/Engineering :: Bio-Informatics",
-    ],
-    license='MIT',
+    url='https://gitlab.com/ostrokach/jobsubmitter',
     packages=find_packages(),
+    entry_points={'console_scripts': ['jobsubmitter=jobsubmitter.cli:main']},
+    scripts=['jobsubmitter/scripts/qsub.sh'],
     package_data={
         'jobsubmitter': 'scripts/*.sh',
     },
-    scripts=['jobsubmitter/scripts/qsub.sh'],
+    include_package_data=True,
+    install_requires=requirements,
+    license='MIT',
+    zip_safe=False,
+    keywords='jobsubmitter',
+    classifiers=[
+        "License :: OSI Approved :: MIT License",
+        'Development Status :: 2 - Pre-Alpha',
+        'Intended Audience :: Developers',
+        'Natural Language :: English',
+        'Programming Language :: Python :: 3.6',
+    ],
+    test_suite='tests',
+    tests_require=test_requirements,
 )
