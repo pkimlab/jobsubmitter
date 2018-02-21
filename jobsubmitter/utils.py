@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 @system_tools.retry_ssh
-def execute_remotely(system_command: str, ssh: paramiko.SSHClient) -> str:
+def execute_remotely(ssh: paramiko.SSHClient, system_command: str) -> str:
     """Execute a system command on a remote server.
 
     Returns:

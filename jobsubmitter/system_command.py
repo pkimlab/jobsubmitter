@@ -1,27 +1,26 @@
 from textwrap import dedent
-from typing import Mapping
 
 from .job_opts import JobOpts
 
 
-def get_system_command(cluster: str, job_opts: JobOpts, env: Mapping[str, str]) -> str:
+def get_system_command(cluster: str, job_opts: JobOpts) -> str:
     if cluster == 'sge':
-        return _get_sge_system_command(job_opts, env)
+        return _get_sge_system_command(job_opts)
     elif cluster == 'pbs':
-        return _get_pbs_system_command(job_opts, env)
+        return _get_pbs_system_command(job_opts)
     elif cluster == 'slurm':
-        return _get_slurm_system_command(job_opts, env)
+        return _get_slurm_system_command(job_opts)
     else:
         raise ValueError(f"Unknown cluster type: {cluster}.")
 
 
-def _get_sge_system_command(jo: JobOpts, env: Mapping[str, str]) -> str:
+def _get_sge_system_command(jo: JobOpts) -> str:
 
     system_command = dedent(f"""\
-        PATH="{env.get('PATH', '$PATH')}"
+        PATH="{jo.env.get('PATH', '$PATH')}"
         qsub
         -S {jo.qsub_shell}
-        -N {jo.job_name}
+        -N {jo.job_id}
         -o /dev/null -e /dev/null
         -wd {jo.working_dir}
         -pe smp {jo.nproc}
@@ -32,25 +31,25 @@ def _get_sge_system_command(jo: JobOpts, env: Mapping[str, str]) -> str:
         {f"-t {jo.array_jobs.partition('%')[0]}" if jo.array_jobs else ""}
         {f"-tc {jo.array_jobs.partition('%')[-1]}" if '%' in jo.array_jobs else ""}
         {f" -M {jo.email} -ma" if jo.email else ""}
-        {' '.join(f'-v {key}="{value}"' for key, value in env.items())}
+        {' '.join(f'-v {key}="{value}"' for key, value in jo.env.items())}
         "{jo.qsub_script}"
         """).replace('\n', ' ')
     return system_command
 
 
-def _get_pbs_system_command(jo: JobOpts, env: Mapping[str, str]) -> str:
+def _get_pbs_system_command(jo: JobOpts) -> str:
     """Generate a system command that can be ran to submit a job to the cluster.
 
     Returns:
         System command.
     """
-    assert ',' not in env['SYSTEM_COMMAND']
+    assert ',' not in jo.env['SYSTEM_COMMAND']
 
     system_command = dedent(f"""\
-        PATH="{env.get('PATH', '$PATH')}"
+        PATH="{jo.env.get('PATH', '$PATH')}"
         qsub
         -S {jo.qsub_shell}
-        -N {jo.job_name}
+        -N {jo.job_id}
         -o /dev/null -e /dev/null
         -d {jo.working_dir}
         -l nodes=1
@@ -64,19 +63,19 @@ def _get_pbs_system_command(jo: JobOpts, env: Mapping[str, str]) -> str:
         {f"-t {jo.array_jobs}" if jo.array_jobs else ""}
         {f"-A {jo.account}" if jo.account else ""}
         {f"-M {jo.email} -ma" if jo.email else ""}
-        {"-v " + ','.join(f'{key}="{value}"' for key, value in env.items())}
+        {"-v " + ','.join(f'{key}="{value}"' for key, value in jo.env.items())}
         "{jo.qsub_script}"
         """).replace('\n', ' ')
     return system_command
 
 
-def _get_slurm_system_command(jo: JobOpts, env: Mapping[str, str]) -> str:
-    assert ',' not in env['SYSTEM_COMMAND']
+def _get_slurm_system_command(jo: JobOpts) -> str:
+    assert ',' not in jo.env['SYSTEM_COMMAND']
     system_command = dedent(f"""\
-        PATH="{env.get('PATH', '$PATH')}"
+        PATH="{jo.env.get('PATH', '$PATH')}"
         sbatch
         -o /dev/null -e /dev/null
-        --job-name={jo.job_name}
+        --job-name={jo.job_id}
         --workdir="{jo.working_dir}"
         --cpus-per-task={jo.nproc}
         --time={jo.walltime}
@@ -85,7 +84,7 @@ def _get_slurm_system_command(jo: JobOpts, env: Mapping[str, str]) -> str:
         {f"--array={jo.array_jobs}" if jo.array_jobs else ""}
         {f"--account={jo.account}" if jo.account else ""}
         {f"--mail-user={jo.email} --mail-type=FAIL" if jo.email else ""}
-        {"--export=" + ','.join(f'{key}="{value}"' for key, value in env.items())}
+        {"--export=" + ','.join(f'{key}="{value}"' for key, value in jo.env.items())}
         "{jo.qsub_script}"
         """).replace('\n', ' ')
     return system_command

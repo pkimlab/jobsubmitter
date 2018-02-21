@@ -10,25 +10,13 @@ bc2:
   concurrent_job_limit: 800
 scinet-gpc:
   connection_string: "pbs://:@login.scinet.utoronto.ca-gpc02"
-  remote_home: "$HOME"
-  remote_scratch: "$SCRATCH"
 cq-ms2:
   connection_string: "pbs://:@pmkim-ms.ccs.usherbrooke.ca"
-  remote_home: "$HOME"
-  remote_scratch: "$HOME"
 cq-mp2:
   connection_string: "pbs://:@pmkim-mp.ccs.usherbrooke.ca"
-  remote_home: "$HOME"
-  remote_scratch: "$HOME"
 guillimin:
   connection_string: "pbs://:@guillimin.hpc.mcgill.ca"
-  remote_home: "$PROJECT"
-  remote_scratch: "$SCRATCH"
 cedar:
   connection_string: "slurm://:@cedar5.cedar.computecanada.ca"
-  remote_home: "$PROJECT"
-  remote_scratch: "$SCRATCH"
 graham:
   connection_string: "slurm://:@gra-login2.sharcnet.ca"
-  remote_home: "$PROJECT"
-  remote_scratch: "$SCRATCH"
