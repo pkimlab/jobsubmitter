@@ -2,6 +2,6 @@
 
 set -ev
 
-cd "${RECIPE_DIR}/.."
-flake8
-python -m pytest --cov="${SP_DIR}/${PKG_NAME}"
+SRC_DIR="${RECIPE_DIR}/.."
+
+python -m pytest -c "${SRC_DIR}/setup.cfg" --cov="${SP_DIR}/${PKG_NAME}" "${SRC_DIR}"

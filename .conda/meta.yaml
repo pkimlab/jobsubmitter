@@ -11,18 +11,27 @@ build:
 
 requirements:
   build:
-    - python
     - pandoc
     - pypandoc
-  run:
+    # Basic python
     - python
-    - click
+  run:
+    # Basic python
+    - python
+    - pyyaml
+    - requests
+    - retrying
+    - paramiko
+    - attr
+    - tqdm
+    # Scientific python
+    - numpy
+    - scipy
+    - pandas
+    - sqlalchemy
 
 test:
   requires:
-    - flake8
-    - isort
-    - mypy
     - pytest
     - pytest-cov
     - pytest-benchmark
