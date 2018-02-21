@@ -102,7 +102,7 @@ class JobSubmitter:
     # Submit jobs (requires connection with server)
     # #########################################################################
 
-    def submit(self, df: pd.DataFrame, job_opts: JobOpts, deplay=0.02, tqdm_disable=False):
+    def submit(self, df: pd.DataFrame, job_opts: JobOpts, deplay=0.02, progressbar=True):
         """Sumit jobs to the cluster.
 
         You have to establish a connection first (explicit is better than implicit)::
@@ -111,30 +111,28 @@ class JobSubmitter:
                 js.submit([(0, 'echo "Hello world!"), (1, 'echo "Goodbye world!"')]
         """
         assert 'system_command' in df
-        assert df.index.duplicated().empty
+        assert not df.duplicated().any()
 
         job_opts.working_dir.joinpath(job_opts.job_id).mkdir(parents=True, exist_ok=True)
 
-        def worker(row):
-            if self.host_opts.scheme in ['local']:
-                worker = functools.partial(self._local_worker, job_opts=job_opts)
-            else:
-                worker = functools.partial(self._remote_worker, job_opts=job_opts)
-            return worker
+        if self.host_opts.scheme in ['local']:
+            worker = functools.partial(self._local_worker, job_opts=job_opts)
+        else:
+            worker = functools.partial(self._remote_worker, job_opts=job_opts)
 
         # Submit multiple jobs in parallel
         futures = []
         pool = concurrent.futures.ThreadPoolExecutor()
-        for row in self._itertuples(df, tqdm_disable=tqdm_disable):
+        for row in self._itertuples(df, progressbar=progressbar):
             future = pool.submit(worker, row)
             futures.append(future)
             time.sleep(deplay)
         pool.shutdown(wait=False)
         return futures
 
-    def _itertuples(self, df, tqdm_disable):
+    def _itertuples(self, df, progressbar):
         for i, row in enumerate(
-                tqdm(df.itertuples(), total=len(df), ncols=100, disable=tqdm_disable)):
+                tqdm(df.itertuples(), total=len(df), ncols=100, disable=not progressbar)):
             logger.debug("i: %s, row: %s", i, row)
             assert hasattr(row, 'Index') and hasattr(row, 'system_command')
             self._respect_concurrent_job_limit(i)
@@ -147,7 +145,7 @@ class JobSubmitter:
         """
         stdout_log = self.get_stdout_log(job_opts.working_dir, job_opts.job_id, row.Index)
         stderr_log = self.get_stderr_log(job_opts.working_dir, job_opts.job_id, row.Index)
-        with open(stdout_log, 'w') as stdout, open(stderr_log, 'w') as stderr:
+        with stdout_log.open('w') as stdout, stderr_log.open('w') as stderr:
             cp = subprocess.run(
                 row.system_command,
                 stdout=stdout,
@@ -180,7 +178,7 @@ class JobSubmitter:
         """Limit the number of jobs running simultaneously."""
         STEP_SIZE = 50
         DELAY = 120
-        if self.concurrent_job_limit is not None and ((job_idx + 1) % STEP_SIZE) == 0:
+        if self.concurrent_job_limit and ((job_idx + 1) % STEP_SIZE) == 0:
             while (self.num_submitted_jobs + STEP_SIZE) > self.concurrent_job_limit:
                 logger.info("'concurrent_job_limit' reached! Sleeping for {:.0f} minutes...".format(
                     DELAY / 60))
@@ -190,7 +188,7 @@ class JobSubmitter:
     # Monitor job status
     # #########################################################################
 
-    def job_status(self, df: pd.DataFrame, job_opts: JobOpts):
+    def job_status(self, df: pd.DataFrame, job_opts: JobOpts, progressbar=True):
         """Read the status and results of each submitted job.
 
         Notes:
@@ -199,43 +197,45 @@ class JobSubmitter:
         # Refresh NFS:
         os.listdir(job_opts.working_dir.joinpath(job_opts.job_id))  # type: ignore
         results = [
-            self._read_results(row) for row in tqdm(df.itertuples(), total=len(df), ncols=100)
+            self._read_results(row, job_opts)
+            for row in tqdm(df.itertuples(), total=len(df), ncols=100, disable=not progressbar)
         ]
         if not results:
-            return pd.DataFrame(columns=['status_', 'Index'])
+            return pd.DataFrame(columns=['status', 'Index'])
         else:
             return pd.DataFrame(results).set_index('Index')
 
-    def _read_results(self, row):
+    def _read_results(self, row, job_opts):
         # Output files
-        stdout_log = self.get_stdout_log(row.Index)
-        stderr_log = self.get_stderr_log(row.Index)
+        stdout_log = self.get_stdout_log(job_opts.working_dir, job_opts.job_id, row.Index)
+        stderr_log = self.get_stderr_log(job_opts.working_dir, job_opts.job_id, row.Index)
         # === STDERR ===
         data = row._asdict()
         try:
-            ifh = open(stderr_log + '.tmp', 'rt')
+            ifh = stderr_log.with_name(stderr_log.name + '.tmp').open('rt')
         except FileNotFoundError:
             try:
-                ifh = open(stderr_log, 'rt')
+                ifh = stderr_log.open('rt')
             except FileNotFoundError:
-                data['status_'] = 'missing'
+                data['status'] = 'missing'
                 return data
         stderr_file_data = ifh.read().strip().lower()
         ifh.close()
         if stderr_file_data.endswith('error!'):
-            data['status_'] = 'error'
+            data['status'] = 'error'
             return data
         elif stderr_file_data.endswith('done!'):
-            data['status_'] = 'done'
+            data['status'] = 'done'
         else:
-            data['status_'] = 'frozen'
+            data['status'] = 'frozen'
             return data
         # === STDOUT ===
-        with open(stdout_log, 'r') as ifh:
+        with stdout_log.open('r') as ifh:
             stdout_data = ifh.read().strip()
         try:
             data.update(json.loads(stdout_data))
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, TypeError):
+            # `TypeError` in case JSON decodes something other than a dictionary
             data['stdout_data'] = stdout_data
         return data
 
