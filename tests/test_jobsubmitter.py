@@ -3,19 +3,21 @@
 .. note::
     Tests in this file require access to compute clusters on hard-coded IPs.
 """
-import sys
+import logging
 import os
 import os.path as op
-import logging
+import shutil
+import sys
+import tarfile
 import tempfile
 import time
+from collections import Counter
+
 import paramiko
 import pytest
-import tarfile
-import shutil
-from collections import Counter
-import kmtools
+
 import jobsubmitter
+import kmtools
 
 logger = logging.getLogger(__name__)
 

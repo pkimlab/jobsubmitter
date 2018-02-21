@@ -1,6 +1,7 @@
 import json
 import logging
 import os.path as op
+from pathlib import Path
 
 import pytest
 
@@ -9,14 +10,10 @@ from conftest import PATH
 
 logger = logging.getLogger(__name__)
 
-
 # @pytest.fixture(scope='session', params=])
 # def executor(request):
 #     return request.param
 
-
-
-from pathlib import Path
 
 Path('path/to/file.txt').touch()
 
@@ -45,7 +42,10 @@ def submit_jobs(system_commands, executor):
 @pytest.mark.parametrize("executor", ['local', 'beagle', 'banting'])
 def test_simple_1(executor):
     system_commands = {
-        1: {'system_command': "echo 'hello world'", 'random things': 'totally'},
+        1: {
+            'system_command': "echo 'hello world'",
+            'random things': 'totally'
+        },
     }
     submit_jobs(system_commands, executor)
 
@@ -55,6 +55,8 @@ def test_simple_2(executor):
     """This test fails on banting because PBS does not allow commas in system commands."""
     data = {'a': 10, 'b': 20, 'c': 30}
     system_commands = {
-        2: {'system_command': "echo '{}'".format(json.dumps(data))},
+        2: {
+            'system_command': "echo '{}'".format(json.dumps(data))
+        },
     }
     submit_jobs(system_commands, executor)
