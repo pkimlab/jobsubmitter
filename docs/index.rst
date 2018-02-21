@@ -11,7 +11,7 @@ Contents
    contributing
    authors
    history
-   api/generated/jobsubmitter
+   modules
 
 Indices and tables
 ==================
