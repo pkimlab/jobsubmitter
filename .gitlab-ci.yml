@@ -1,9 +1,15 @@
-image: condaforge/linux-anvil:latest
+image: registry.gitlab.com/kimlab/linux-anvil:latest
 
 stages:
+  - lint
   - build
   - test
   - deploy
+
+cache:
+  key: ${CI_COMMIT_REF_NAME}-1
+  paths:
+    - .conda_packages
 
 # === Variables ===
 
@@ -16,19 +22,27 @@ variables:
 .py36: &py36
   PYTHON_VERSION: "3.6"
 
-# === Build ===
+# === Configurations ===
 
 .conda_configure: &conda_configure
   before_script:
+    # Conda environment variables
+    - export CONDA_PKGS_DIRS="${CI_PROJECT_DIR}/.conda_packages"
+    # Make conda cache and bld folders
+    - mkdir -p "${CI_PROJECT_DIR}/conda-bld" "${CONDA_PKGS_DIRS}"
     # Conda configure
-    - conda config --append channels bioconda
+    - conda config --set channel_priority true
+    - conda config --append pkgs_dirs "${CONDA_PKGS_DIRS}"
+    - conda config --append channels conda-forge
+    - conda config --append channels pytorch
     - conda config --append channels ostrokach-forge
+    - conda config --append channels bioconda
     - case "${PACKAGE_VERSION}" in
       *dev*)
-        conda config --append channels kimlab/label/dev;
         conda config --append channels kimlab;
-        conda config --append channels ostrokach/label/dev;
+        conda config --append channels kimlab/label/dev;
         conda config --append channels ostrokach;
+        conda config --append channels ostrokach/label/dev;
       ;;
       *)
         conda config --append channels kimlab;
@@ -36,27 +50,36 @@ variables:
       ;;
       esac
 
+# === Lint ===
+
+lint:
+  stage: lint
+  <<: [*conda_configure]
+  variables:
+    <<: [*py36]
+  script:
+    - conda install -yq "python=${PYTHON_VERSION}" isort flake8 mypy
+    - python -m isort -c
+    - python -m flake8
+    - python -m mypy -p "${CI_PROJECT_NAME}"
+
+# === Build ===
+
 .build: &build
   stage: build
-  <<: *conda_configure
   script:
     # Build conda packages
-    - cd $CI_PROJECT_DIR/devtools/conda-recipe
-    - conda build --python $PYTHON_VERSION .
-    # Save built packages as artifacts
-    - mkdir $CI_PROJECT_DIR/conda-bld
-    - cp -r /opt/conda/conda-bld/{linux-64,noarch} $CI_PROJECT_DIR/conda-bld
+    - cd "${CI_PROJECT_DIR}/.conda"
+    - conda build .
+      --no-test
+      --python $PYTHON_VERSION
+      --output-folder "${CI_PROJECT_DIR}/conda-bld"
   artifacts:
     paths:
     - conda-bld
 
-build-py35:
-  <<: *build
-  variables:
-    <<: [*py35]
-
 build-py36:
-  <<: *build
+  <<: [*conda_configure, *build]
   variables:
     <<: [*py36]
 
@@ -65,61 +88,61 @@ build-py36:
 .test: &test
   stage: test
   script:
-    # Conda install
+    # Restore built packages
     - cp -r $CI_PROJECT_DIR/conda-bld/* /opt/conda/conda-bld/
     - conda index /opt/conda/conda-bld/
-    - conda install -y -q --use-local "python=$PYTHON_VERSION" $CI_PROJECT_NAME >/dev/null
-    # Test
-    - pip install -q flake8 pytest pytest-cov pytest-logging hypothesis
-    - flake8
-    - py.test --cov="${SITE_PACKAGES}/${CI_PROJECT_NAME}"
+    # Run tests
+    - cd $CI_PROJECT_DIR/.conda
+    - conda build .
+      --test
+      --python $PYTHON_VERSION
   coverage: /^TOTAL.* (\d+\%)/
-
-test-py35:
-  <<: [*conda_configure, *test]
-  dependencies:
-    - build-py35
-  variables:
-    <<: [*py35]
+  artifacts:
+    paths:
+      - environment-py${PYTHON_VERSION/./}.yml
 
 test-py36:
   <<: [*conda_configure, *test]
-  dependencies:
-    - build-py36
   variables:
     <<: [*py36]
+  dependencies:
+    - build-py36
 
 # === Pages ===
 
 .docs: &docs
   stage: test
   script:
-    # Conda install
+    # Restore built packages
     - cp -r $CI_PROJECT_DIR/conda-bld/* /opt/conda/conda-bld/
     - conda index /opt/conda/conda-bld/
-    - conda install -y -q --use-local "python=$PYTHON_VERSION" $CI_PROJECT_NAME >/dev/null
-    # Build docs
+    # Install required packages
+    - conda install -yq --use-local "python=$PYTHON_VERSION" ${CI_PROJECT_NAME}
     - conda install -yq nbconvert ipython ipykernel pandoc
     - pip install -q sphinx sphinx_rtd_theme recommonmark nbsphinx
+    # Build docs
+    - (cd docs && sphinx-apidoc ../${CI_PROJECT_NAME} -o api/generated -TeMP)
     - sphinx-build docs public
 
 test-pages:
   <<: [*conda_configure, *docs]
-  dependencies:
-    - build-py36
   variables:
     <<: [*py36]
+  dependencies:
+    - build-py36
   except:
     - master
+    - tags
 
 pages:
   <<: [*conda_configure, *docs]
-  dependencies:
-    - build-py36
   variables:
     <<: [*py36]
+  dependencies:
+    - build-py36
   only:
     - master
+    - tags
   except:
     - triggers
   artifacts:
@@ -130,25 +153,29 @@ pages:
 
 .deploy: &deploy
   stage: deploy
+  before_script:
+    - conda install twine -yq --no-channel-priority
   script:
-    # Conda configure
+    # Rename wheels from `-linux_x86_64.whl` to `-manylinux1_x86_64.whl`
+    # so that they can be uploaded to PyPI.
+    - for i in $CI_PROJECT_DIR/conda-bld/linux-64/*.whl ; do
+      echo $i;
+      mv "${i}" "${i%%-linux_x86_64.whl}-manylinux1_x86_64.whl";
+      done
+    # Upload package to Anaconda and PyPi repos.
     - case "${PACKAGE_VERSION}" in
       *dev*)
-        anaconda -t $ANACONDA_TOKEN upload $CI_PROJECT_DIR/conda-bld/linux-64/*.tar.bz2 -u ${CI_PROJECT_NAMESPACE} --label dev --force
+        anaconda -t $ANACONDA_TOKEN upload $CI_PROJECT_DIR/conda-bld/linux-64/*.tar.bz2 -u ${CI_PROJECT_NAMESPACE} --label dev --force;
       ;;
       *)
-        anaconda -t $ANACONDA_TOKEN upload $CI_PROJECT_DIR/conda-bld/linux-64/*.tar.bz2 -u ${CI_PROJECT_NAMESPACE}
+        anaconda -t $ANACONDA_TOKEN upload $CI_PROJECT_DIR/conda-bld/linux-64/*.tar.bz2 -u ${CI_PROJECT_NAMESPACE};
+        twine upload $CI_PROJECT_DIR/conda-bld/linux-64/*.whl;
       ;;
       esac
   only:
     - master
   except:
     - triggers
-
-deploy-py35:
-  <<: *deploy
-  dependencies:
-    - build-py35
 
 deploy-py36:
   <<: *deploy
