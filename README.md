@@ -2,7 +2,7 @@
 
 
 [![conda](https://img.shields.io/conda/dn/ostrokach/jobsubmitter.svg)](https://anaconda.org/ostrokach/jobsubmitter/)
-[![docs](https://img.shields.io/badge/docs-v0.1.0.dev0-blue.svg)](https://ostrokach.gitlab.io/jobsubmitter/)
+[![docs](https://img.shields.io/badge/docs-v0.1.0-blue.svg)](https://ostrokach.gitlab.io/jobsubmitter/)
 [![build status](https://gitlab.com/ostrokach/jobsubmitter/badges/master/build.svg)](https://gitlab.com/ostrokach/jobsubmitter/commits/master/)
 [![coverage report](https://gitlab.com/ostrokach/jobsubmitter/badges/master/coverage.svg)](https://gitlab.com/ostrokach/jobsubmitter/commits/master/)
 
