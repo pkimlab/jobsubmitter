@@ -1,9 +1,9 @@
 # jobsubmitter
 
 [![anaconda](https://anaconda.org/ostrokach/jobsubmitter/badges/version.svg)](https://anaconda.org/ostrokach/jobsubmitter)
-[![docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square&?version=latest)](http://ostrokach.gitlab.io/jobsubmitter)
-[![build status](https://gitlab.com/ostrokach/jobsubmitter/badges/master/build.svg)](https://gitlab.com/ostrokach/jobsubmitter/commits/master)
-[![coverage report](https://gitlab.com/ostrokach/jobsubmitter/badges/master/coverage.svg)](https://gitlab.com/ostrokach/jobsubmitter/commits/master)
+[![docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square&?version=latest)](http://kimlab.gitlab.io/jobsubmitter)
+[![build status](https://gitlab.com/ostrokach/jobsubmitter/badges/master/build.svg)](https://gitlab.com/kimlab/jobsubmitter/commits/master)
+[![coverage report](https://gitlab.com/ostrokach/jobsubmitter/badges/master/coverage.svg)](https://gitlab.com/kimlab/jobsubmitter/commits/master)
 
 Package for running jobs on Sun Grid Engine (SGE) / Torque / PBS.
 
