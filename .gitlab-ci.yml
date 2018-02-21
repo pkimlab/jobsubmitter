@@ -14,7 +14,7 @@ cache:
 # === Variables ===
 
 variables:
-  PACKAGE_VERSION: 0.0.2
+  PACKAGE_VERSION: 0.1.0.dev0
 
 .py35: &py35
   PYTHON_VERSION: "3.5"

@@ -12,7 +12,7 @@
 """
 __author__ = """Alexey Strokach"""
 __email__ = 'alex.strokach@utoronto.ca'
-__version__ = '0.0.2'
+__version__ = '0.1.0.dev0'
 
 from .utils import *
 from .job_opts import *
