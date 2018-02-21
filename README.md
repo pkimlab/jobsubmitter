@@ -1,43 +1,34 @@
 # jobsubmitter
 
 [![anaconda](https://anaconda.org/ostrokach/jobsubmitter/badges/version.svg)](https://anaconda.org/ostrokach/jobsubmitter)
-[![docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square&?version=latest)](http://kimlab.gitlab.io/jobsubmitter)
-[![build status](https://gitlab.com/ostrokach/jobsubmitter/badges/master/build.svg)](https://gitlab.com/kimlab/jobsubmitter/commits/master)
-[![coverage report](https://gitlab.com/ostrokach/jobsubmitter/badges/master/coverage.svg)](https://gitlab.com/kimlab/jobsubmitter/commits/master)
+[![docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square&?version=latest)](http://ostrokach.gitlab.io/jobsubmitter)
+[![build status](https://gitlab.com/ostrokach/jobsubmitter/badges/master/build.svg)](https://gitlab.com/ostrokach/jobsubmitter/commits/master)
+[![coverage report](https://gitlab.com/ostrokach/jobsubmitter/badges/master/coverage.svg)](https://gitlab.com/ostrokach/jobsubmitter/commits/master)
 
-Package for running jobs on Sun Grid Engine (SGE) / Torque / PBS.
-
+Package for running jobs on Sun Grid Engine (SGE) / Torque / Slurm clusters.
 
 ## Example
 
 ```python
-import os.path as op
+import jobsubmitter
 
-# Initialize JobSubmitter
-js = jobsubmitter.JobSubmitter(
-    job_name='test',
-    connection_string='sge://:@192.168.XXX.XXX',
-    log_root_path=op.expanduser('~/pbs_output'),
-    email='noname@example.com',
-    force_new_folder=False,
-    concurrent_job_limit=None,  # max number of jobs to submit at a time
-    nproc=1, queue='medium', walltime='8:00:00', mem='6G',
-    env={'PATH': '/home/username/anaconda/bin'}
-)
+JOB_ID = 'job_0'
+DATA_ID = 'adjacency_matrix_3.parquet'
 
-# Submit jobs
-with js.connect():
-    js.submit([0, "echo 'hello world'"])
+JOB_DIR = Path(f"~/datapkg/{os.environ['DB_SCHEMA']}/notebooks/{NOTEBOOK_NAME}/{JOB_ID}")
+DATA_DIR = Path(f"~/datapkg/{os.environ['DB_SCHEMA']}/notebooks/{NOTEBOOK_NAME}/{DATA_ID}")
 
-# Monitor jobs
-with js.connect():
-    print(js.get_num_running_jobs())
+ENV = {
+    'PATH': '/home/kimlab1/strokach/anaconda/bin:/usr/local/bin:/usr/bin:/bin',
+    'OMP_NUM_THREADS': '1',
+    'OPENMM_CPU_THREADS': '1',
+}
 
-# Read job results
-results = js.job_status()
-print(Counter(results['status']))
+js = jobsubmitter.JobSubmitter('beagle', JOB_DIR, DATA_DIR, ENV)
+jo = jobsubmitter.JobOpts(JOB_ID, nproc=1, queue='medium', walltime='48:00:00', mem='16G')
+
+futures = js.submit(system_commands, jo, deplay=0.1)
 ```
-
 
 ## Contributing
 
