@@ -1,13 +1,18 @@
-Welcome to jobsubmitter's documentation!
-===============================================================================
-
-Contents:
+========
+Contents
+========
 
 .. toctree::
    :maxdepth: 2
 
-   acknowledgements
-
+   readme
+   installation
+   usage
+   modules
+   contributing
+   authors
+   history
+   api/generated/jobsubmitter
 
 Indices and tables
 ==================
