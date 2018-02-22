@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from conftest import PATH
 
 import jobsubmitter
-from conftest import PATH
 
 logger = logging.getLogger(__name__)
 
