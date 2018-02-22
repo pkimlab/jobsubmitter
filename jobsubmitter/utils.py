@@ -1,13 +1,32 @@
+import functools
 import logging
 
 import paramiko
-
-from kmtools import system_tools
+from retrying import retry
 
 logger = logging.getLogger(__name__)
 
 
-@system_tools.retry_ssh
+def retry_ssh(fn):
+    """Retry doing something over an ssh connection."""
+    _check_exception = functools.partial(check_exception, valid_exc=paramiko.SSHException)
+    wrapper = retry(
+        retry_on_exception=_check_exception,
+        wait_exponential_multiplier=1_000,
+        wait_exponential_max=60_000,
+        stop_max_attempt_number=7)
+    return wrapper(fn)
+
+
+def check_exception(exc, valid_exc):
+    logger.error('The following exception occured:\n{}'.format(exc))
+    to_retry = isinstance(exc, valid_exc)
+    if to_retry:
+        logger.error('Retrying...')
+    return to_retry
+
+
+@retry_ssh
 def execute_remotely(ssh: paramiko.SSHClient, system_command: str) -> str:
     """Execute a system command on a remote server.
 
