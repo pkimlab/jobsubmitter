@@ -39,7 +39,7 @@ test_requirements = [
 
 setup(
     name='jobsubmitter',
-    version='0.1.1.dev0',
+    version='0.1.1',
     description="Package for running jobs on Sun Grid Engine (SGE) / PBS / Slurm clusters.",
     long_description=read_md('README.md') + '\n\n' + read_md('HISTORY.md'),
     author="Alexey Strokach",

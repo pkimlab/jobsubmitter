@@ -2,7 +2,7 @@
 
 
 [![conda](https://img.shields.io/conda/dn/kimlab/jobsubmitter.svg)](https://anaconda.org/kimlab/jobsubmitter/)
-[![docs](https://img.shields.io/badge/docs-v0.1.1.dev0-blue.svg)](https://kimlab.gitlab.io/jobsubmitter/)
+[![docs](https://img.shields.io/badge/docs-v0.1.1-blue.svg)](https://kimlab.gitlab.io/jobsubmitter/)
 [![build status](https://gitlab.com/kimlab/jobsubmitter/badges/master/build.svg)](https://gitlab.com/kimlab/jobsubmitter/commits/master/)
 [![coverage report](https://gitlab.com/kimlab/jobsubmitter/badges/master/coverage.svg)](https://gitlab.com/kimlab/jobsubmitter/commits/master/)
 
