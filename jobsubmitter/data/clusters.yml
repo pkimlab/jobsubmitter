@@ -1,0 +1,22 @@
+local:
+  connection_string: "local://:@127.0.0.1"
+beagle:
+  connection_string: "sge://:@192.168.6.201"
+bc:
+  connection_string: "pbs://:@192.168.233.68"
+  concurrent_job_limit: 800
+bc2:
+  connection_string: "pbs://:@192.168.233.150"
+  concurrent_job_limit: 800
+scinet-gpc:
+  connection_string: "pbs://:@login.scinet.utoronto.ca-gpc02"
+cq-ms2:
+  connection_string: "pbs://:@pmkim-ms.ccs.usherbrooke.ca"
+cq-mp2:
+  connection_string: "pbs://:@pmkim-mp.ccs.usherbrooke.ca"
+guillimin:
+  connection_string: "pbs://:@guillimin.hpc.mcgill.ca"
+cedar:
+  connection_string: "slurm://:@cedar5.cedar.computecanada.ca"
+graham:
+  connection_string: "slurm://:@gra-login2.sharcnet.ca"
