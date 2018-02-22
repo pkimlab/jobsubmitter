@@ -22,7 +22,7 @@ requirements:
     - requests
     - retrying
     - paramiko
-    - attr
+    - attrs
     - tqdm
     # Scientific python
     - numpy
