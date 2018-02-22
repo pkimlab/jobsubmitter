@@ -5,7 +5,7 @@
 To install Job Submitter, run this command in your terminal:
 
 ```bash
-conda install jobsubmitter -c ostrokach
+conda install jobsubmitter -c kimlab
 ```
 
 This is the preferred method to install Job Submitter, as it will always install the most recent stable release.
@@ -23,13 +23,13 @@ The sources for Job Submitter can be downloaded from the [GitLab repo].
 You can either clone the public repository:
 
 ```bash
-git clone git://gitlab.com/ostrokach/jobsubmitter
+git clone git://gitlab.com/kimlab/jobsubmitter
 ```
 
 Or download the [tarball]:
 
 ```bash
-curl -OL https://gitlab.com/ostrokach/jobsubmitter/repository/master/archive.tar
+curl -OL https://gitlab.com/kimlab/jobsubmitter/repository/master/archive.tar
 ```
 
 Once you have a copy of the source, you can install it with:
@@ -38,5 +38,5 @@ Once you have a copy of the source, you can install it with:
 python setup.py install
 ```
 
-[GitLab repo]: https://gitlab.com/ostrokach/jobsubmitter
-[tarball]: https://gitlab.com/ostrokach/jobsubmitter/repository/master/archive.tar
+[GitLab repo]: https://gitlab.com/kimlab/jobsubmitter
+[tarball]: https://gitlab.com/kimlab/jobsubmitter/repository/master/archive.tar

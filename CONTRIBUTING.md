@@ -9,7 +9,7 @@ You can contribute in many ways:
 
 ### Report Bugs
 
-Report bugs at https://gitlab.com/ostrokach/jobsubmitter/issues.
+Report bugs at https://gitlab.com/kimlab/jobsubmitter/issues.
 
 If you are reporting a bug, please include:
 
@@ -35,7 +35,7 @@ articles, and such.
 
 ### Submit Feedback
 
-The best way to send feedback is to file an issue at https://gitlab.com/ostrokach/jobsubmitter/issues.
+The best way to send feedback is to file an issue at https://gitlab.com/kimlab/jobsubmitter/issues.
 
 If you are proposing a feature:
 

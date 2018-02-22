@@ -44,7 +44,7 @@ setup(
     long_description=read_md('README.md') + '\n\n' + read_md('HISTORY.md'),
     author="Alexey Strokach",
     author_email='alex.strokach@utoronto.ca',
-    url='https://gitlab.com/ostrokach/jobsubmitter',
+    url='https://gitlab.com/kimlab/jobsubmitter',
     packages=find_packages(),
     entry_points={'console_scripts': ['jobsubmitter=jobsubmitter.cli:main']},
     scripts=['jobsubmitter/scripts/qsub.sh'],

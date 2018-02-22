@@ -44,6 +44,6 @@ outputs:
   - type: wheel
 
 about:
-  home: http://gitlab.com/ostrokach/jobsubmitter
+  home: http://gitlab.com/kimlab/jobsubmitter
   license: MIT License
   summary: "Package for running jobs on Sun Grid Engine (SGE) / PBS / Slurm clusters."
