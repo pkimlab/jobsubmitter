@@ -58,7 +58,7 @@ class JobSubmitter:
     @staticmethod
     def get_stdout_log(working_dir: Path, job_id: str, job_idx: int) -> Path:
         """Generate complete filename of the STDOUT log file.
-        
+
         Args:
             working_dir: Full path to the directory from which the jobs are submitted.
             job_id: Folder in which job logs are stored.
