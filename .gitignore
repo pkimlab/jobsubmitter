@@ -36,6 +36,7 @@ pip-delete-this-directory.txt
 
 # Unit test / coverage reports
 htmlcov/
+.hypothesis/
 .tox/
 .coverage
 .coverage.*
@@ -43,7 +44,6 @@ htmlcov/
 nosetests.xml
 coverage.xml
 *,cover
-.hypothesis/
 
 # Translations
 *.mo
@@ -54,6 +54,7 @@ coverage.xml
 
 # Sphinx documentation
 docs/_build/
+docs/_modules/
 
 # PyBuilder
 target/
@@ -62,7 +63,7 @@ target/
 .python-version
 
 # AS
+public/
 .mypy_cache/
-public
-.idea
-.vscode
+.idea/
+.vscode/
