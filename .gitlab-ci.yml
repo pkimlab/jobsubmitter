@@ -59,9 +59,9 @@ lint:
     <<: [*py36]
   script:
     - conda install -yq "python=${PYTHON_VERSION}" isort flake8 mypy
-    - python -m isort -c
+    - python -m isort -p ${CI_PROJECT_NAME} -c
     - python -m flake8
-    - python -m mypy -p "${CI_PROJECT_NAME}"
+    - python -m mypy -p ${CI_PROJECT_NAME}
 
 # === Build ===
 
