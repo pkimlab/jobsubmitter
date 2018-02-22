@@ -1,7 +1,7 @@
 #!/usr/bin/env python
+import json
 import sys
 import time
-import json
 
 
 def eprint(text, file=sys.stderr, **kwargs):

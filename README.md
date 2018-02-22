@@ -1,43 +1,42 @@
-# jobsubmitter
+# Job Submitter
 
-[![anaconda](https://anaconda.org/kimlab/jobsubmitter/badges/version.svg?style=flat-square)](https://anaconda.org/kimlab/jobsubmitter)
-[![docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square&?version=latest)](http://kimlaborg.github.io/jobsubmitter)
-[![travis](https://img.shields.io/travis/kimlaborg/jobsubmitter.svg?style=flat-square)](https://travis-ci.org/kimlaborg/jobsubmitter)
-[![codecov](https://img.shields.io/codecov/c/github/kimlaborg/jobsubmitter.svg?style=flat-square)](https://codecov.io/gh/kimlaborg/jobsubmitter)
 
-Package for running jobs on Sun Grid Engine (SGE) / Torque / PBS.
+[![conda](https://img.shields.io/conda/dn/ostrokach/jobsubmitter.svg)](https://anaconda.org/ostrokach/jobsubmitter/)
+[![docs](https://img.shields.io/badge/docs-v0.1.0-blue.svg)](https://ostrokach.gitlab.io/jobsubmitter/)
+[![build status](https://gitlab.com/ostrokach/jobsubmitter/badges/master/build.svg)](https://gitlab.com/ostrokach/jobsubmitter/commits/master/)
+[![coverage report](https://gitlab.com/ostrokach/jobsubmitter/badges/master/coverage.svg)](https://gitlab.com/ostrokach/jobsubmitter/commits/master/)
 
+Package for running jobs on Sun Grid Engine (SGE) / PBS / Slurm clusters.
+
+## Goals
+
+- Provide an easy way to submit batch jobs from within a Jupyter notebook running on one of the nodes in the cluster.
 
 ## Example
 
 ```python
-import os.path as op
+from jobsubmitter import JobOpts, JobSubmitter
 
-# Initialize JobSubmitter
-js = jobsubmitter.JobSubmitter(
-    job_name='test',
-    connection_string='sge://:@192.168.XXX.XXX',
-    log_root_path=op.expanduser('~/pbs_output'),
-    email='noname@example.com',
-    force_new_folder=False,
-    concurrent_job_limit=None,  # max number of jobs to submit at a time
-    nproc=1, queue='medium', walltime='8:00:00', mem='6G',
-    env={'PATH': '/home/username/anaconda/bin'}
+JOB_ID = 'job_0'
+
+ENV = {
+    'PATH': '/home/kimlab1/strokach/anaconda/bin:/usr/local/bin:/usr/bin:/bin',
+    'OMP_NUM_THREADS': '1',
+}
+
+jo = jobsubmitter.JobOpts(
+    job_id=JOB_ID,
+    working_dir=Path.cwd(),
+    nproc=1,
+    queue='medium',
+    walltime='24:00:00',
+    mem='16G',
+    env=ENV,
 )
+js = jobsubmitter.JobSubmitter('localhost')
 
-# Submit jobs
-with js.connect():
-    js.submit([0, "echo 'hello world'"])
-
-# Monitor jobs
-with js.connect():
-    print(js.get_num_running_jobs())
-
-# Read job results
-results = js.job_status()
-print(Counter(results['status']))
+futures = js.submit(system_commands, jo, deplay=0.1)
 ```
-
 
 ## Contributing
 
