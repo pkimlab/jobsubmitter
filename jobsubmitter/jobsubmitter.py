@@ -35,9 +35,6 @@ class JobSubmitter:
     Notes:
         While it would be safer call the Python executable directly,
         this does not seem to be supported on PBS (at least not on banting :()).
-
-    Args:
-
     """
     host: str
     concurrent_job_limit: int
@@ -60,7 +57,13 @@ class JobSubmitter:
 
     @staticmethod
     def get_stdout_log(working_dir: Path, job_id: str, job_idx: int) -> Path:
-        """Generate complete filename of the STDOUT log file."""
+        """Generate complete filename of the STDOUT log file.
+        
+        Args:
+            working_dir: Full path to the directory from which the jobs are submitted.
+            job_id: Folder in which job logs are stored.
+            job_idx: The index of the particular job.
+        """
         return working_dir.joinpath(job_id).joinpath(f'{job_idx}.out')
 
     @staticmethod
@@ -105,10 +108,11 @@ class JobSubmitter:
     def submit(self, df: pd.DataFrame, job_opts: JobOpts, deplay=0.02, progressbar=True):
         """Sumit jobs to the cluster.
 
-        You have to establish a connection first (explicit is better than implicit)::
+        You have to establish a connection first (explicit is better than implicit).
 
-            with js.connect():
-                js.submit([(0, 'echo "Hello world!"), (1, 'echo "Goodbye world!"')]
+        Examples:
+            >>> with js.connect():
+            ...     js.submit([(0, 'echo "Hello world!"), (1, 'echo "Goodbye world!"')]
         """
         assert 'system_command' in df
         assert not df.duplicated().any()
